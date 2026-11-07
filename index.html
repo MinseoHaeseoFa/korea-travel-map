@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>대한민국 방방곡곡 여행 지도 (Korea Travel Map)</title>
-  <meta name="description" content="전국 251개 시·군·구 나의 여행 발자국을 색칠하고, 지역별 대표 명소와 여행 메모를 기록하는 인터랙티브 여행 지도 웹앱">
+  <meta name="description" content="전국 167개 시·군 나의 여행 발자국을 색칠하고, 10대 대표 명소와 여행 메모를 기록하는 인터랙티브 여행 지도 웹앱">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -15,7 +15,7 @@
       <div class="brand-icon">🗺️</div>
       <div class="brand-text">
         <h1>대한민국 여행 지도</h1>
-        <p>전국 251개 시·군·구 나의 발자국 색칠하기</p>
+        <p>전국 167개 시·군 나의 발자국 색칠하기</p>
       </div>
     </div>
 
@@ -23,20 +23,27 @@
     <div class="stats-container">
       <div class="stat-item">
         <span class="stat-label">방문 지역:</span>
-        <span class="stat-value"><span id="stat-visited-count">0</span> / <span id="stat-total-count">251</span>곳</span>
+        <span class="stat-value"><span id="stat-visited-count">0</span> / 167곳</span>
       </div>
       <div class="stat-divider"></div>
       <div class="stat-item">
         <span class="stat-label">달성률:</span>
-        <span class="stat-value" id="stat-percentage" style="color:#3b82f6;">0.0%</span>
+        <span class="stat-value" id="stat-percentage" style="color:#10b981;">0.0%</span>
       </div>
       <div class="progress-wrap">
         <div class="progress-bar" id="stat-progress-bar"></div>
       </div>
       <div class="stat-divider"></div>
+      <div class="stat-level-summary">
+        <span class="lvl-tag lvl-1" title="당일치기">🟢 <span id="stat-lvl1-count">0</span></span>
+        <span class="lvl-tag lvl-2" title="숙박 여행">🏕️ <span id="stat-lvl2-count">0</span></span>
+        <span class="lvl-tag lvl-3" title="단골 방문">🚀 <span id="stat-lvl3-count">0</span></span>
+        <span class="lvl-tag lvl-4" title="거주/고향">👑 <span id="stat-lvl4-count">0</span></span>
+      </div>
+      <div class="stat-divider"></div>
       <div class="stat-item">
         <span class="stat-label">체크한 명소:</span>
-        <span class="stat-value" id="stat-spots-count" style="color:#f59e0b;">0</span>개
+        <span class="stat-value" id="stat-spots-count" style="color:#f59e0b;">0</span> / 1,670개
       </div>
     </div>
 
@@ -45,32 +52,40 @@
       <!-- Search Input -->
       <div class="search-box">
         <span class="search-icon">🔍</span>
-        <input type="text" id="search-input" placeholder="시·군·구 또는 명소 검색..." autocomplete="off">
+        <input type="text" id="search-input" placeholder="시·군 또는 10대 명소 검색..." autocomplete="off">
         <div class="search-dropdown" id="search-dropdown"></div>
       </div>
 
+      <!-- Random Explorer Button -->
+      <button class="btn btn-random" id="btn-random-pick" title="아직 안 가본 시·군 중 랜덤 추천 여행지 추첨">
+        <span>🎲</span> <span class="btn-text">어디 갈까?</span>
+      </button>
+
+      <!-- Toggle Map Labels Button -->
+      <button class="btn" id="btn-toggle-labels" title="지도에 시·군 이름 표시 토글">
+        <span>🏷️</span> <span class="btn-text">지명 표시</span>
+      </button>
+
       <!-- Export Image Button -->
-      <button class="btn btn-primary" id="btn-export-image" title="내가 색칠한 전국 지도를 PNG 이미지로 저장">
+      <button class="btn btn-primary" id="btn-export-image" title="내가 색칠한 전국 지도를 고화질 PNG 이미지로 저장">
         <span>📸</span> <span class="btn-text">지도 저장</span>
       </button>
 
       <!-- Backup / Restore Modal Button -->
       <button class="btn" id="btn-open-backup" title="데이터 백업 및 복원">
-        <span>💾</span> <span class="btn-text">백업/관리</span>
+        <span>💾</span> <span class="btn-text">백업</span>
       </button>
     </div>
   </header>
 
   <!-- ================= Province Quick Filter Bar ================= -->
   <nav class="filter-bar">
-    <button class="filter-chip active" data-filter="all">전체 (251)</button>
-    <button class="filter-chip" data-filter="seoul">서울 (25)</button>
-    <button class="filter-chip" data-filter="gyeonggi">경기 (44)</button>
-    <button class="filter-chip" data-filter="incheon">인천 (10)</button>
-    <button class="filter-chip" data-filter="gangwon">강원 (18)</button>
-    <button class="filter-chip" data-filter="chungcheong">충청권 (29)</button>
+    <button class="filter-chip active" data-filter="all">전체 (167)</button>
+    <button class="filter-chip" data-filter="capital">수도권 (35)</button>
+    <button class="filter-chip" data-filter="gangwon">강원권 (18)</button>
+    <button class="filter-chip" data-filter="chungcheong">충청권 (28)</button>
     <button class="filter-chip" data-filter="jeolla">호남권 (37)</button>
-    <button class="filter-chip" data-filter="gyeongsang">영남권 (46)</button>
+    <button class="filter-chip" data-filter="gyeongsang">영남권 (47)</button>
     <button class="filter-chip" data-filter="jeju">제주 (2)</button>
     <button class="filter-chip" data-filter="visited_only" style="background:#ecfdf5;color:#059669;font-weight:700;">✅ 방문한 곳만</button>
   </nav>
@@ -87,28 +102,29 @@
         <button class="zoom-btn" id="btn-zoom-reset" title="전체 화면 복원" style="font-size:12px;">전체</button>
       </div>
 
-      <!-- Map Legend -->
+      <!-- Map 5-Level Legend -->
       <div class="map-legend">
-        <div class="legend-item">
-          <div class="legend-color visited"></div>
-          <span>방문 완료</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-color unvisited"></div>
-          <span>미방문</span>
-        </div>
+        <div class="legend-title">방문 등급</div>
+        <div class="legend-item"><div class="legend-color lvl-4"></div><span>👑 거주/고향</span></div>
+        <div class="legend-item"><div class="legend-color lvl-3"></div><span>🚀 단골/자주</span></div>
+        <div class="legend-item"><div class="legend-color lvl-2"></div><span>🏕️ 숙박 여행</span></div>
+        <div class="legend-item"><div class="legend-color lvl-1"></div><span>🟢 당일치기</span></div>
+        <div class="legend-item"><div class="legend-color lvl-0"></div><span>⬜ 미방문</span></div>
       </div>
 
-      <!-- Floating Tooltip (Hover) -->
+      <!-- Floating Tooltip (Hover on PC) -->
       <div class="tooltip" id="map-tooltip">
         <div class="tooltip-header">
           <span class="tooltip-title" id="tt-title">지역명</span>
           <span class="tooltip-badge" id="tt-badge">미방문</span>
         </div>
-        <div class="tooltip-spots-title">🌟 꼭 가봐야 할 대표 명소:</div>
+        <div class="tooltip-spots-title">🌟 전문 여행가 추천 대표 명소:</div>
         <ul class="tooltip-spot-list" id="tt-spots"></ul>
-        <div class="tooltip-hint">클릭하여 여행 기록 정리하기 👆</div>
+        <div class="tooltip-hint">클릭하여 방문 등급 및 10대 명소 정리 👆</div>
       </div>
+
+      <!-- Random Recommendation Toast -->
+      <div class="toast-popup" id="random-toast"></div>
     </div>
 
     <!-- Drawer Backdrop (Click to close) -->
@@ -118,42 +134,69 @@
     <aside class="drawer" id="region-drawer">
       <div class="drawer-header">
         <div class="drawer-title-area">
-          <h2 id="drawer-region-title">강원도 강릉시</h2>
-          <p id="drawer-region-eng">Gangneung-si</p>
+          <div class="drawer-province-tag" id="drawer-province-tag">충청남도</div>
+          <h2 id="drawer-region-title">천안시</h2>
         </div>
         <button class="btn-close" id="btn-close-drawer" title="닫기">✕</button>
       </div>
 
       <div class="drawer-body">
-        <!-- 1. Visit Toggle Banner -->
-        <div class="visit-toggle-card" id="visit-toggle-card">
-          <div class="toggle-status-info">
-            <h3 id="visit-status-title">아직 안 가본 곳이에요</h3>
-            <p id="visit-status-desc">방문하셨다면 색칠 버튼을 눌러주세요.</p>
+        <!-- 1. Visit Level Selector (5-Tier) -->
+        <div class="visit-level-panel">
+          <div class="level-panel-title">
+            <span>🎨 방문 등급 선택</span>
+            <span class="level-panel-badge" id="current-level-badge">미방문</span>
           </div>
-          <button class="toggle-btn btn-mark-visit" id="visit-toggle-btn">방문 완료 (색칠)</button>
+          <div class="level-btn-grid">
+            <button class="lvl-btn" data-level="1" id="btn-lvl-1">
+              <span class="lvl-emoji">🟢</span>
+              <span class="lvl-name">당일치기</span>
+            </button>
+            <button class="lvl-btn" data-level="2" id="btn-lvl-2">
+              <span class="lvl-emoji">🏕️</span>
+              <span class="lvl-name">숙박 여행</span>
+            </button>
+            <button class="lvl-btn" data-level="3" id="btn-lvl-3">
+              <span class="lvl-emoji">🚀</span>
+              <span class="lvl-name">단골·자주</span>
+            </button>
+            <button class="lvl-btn" data-level="4" id="btn-lvl-4">
+              <span class="lvl-emoji">👑</span>
+              <span class="lvl-name">거주·고향</span>
+            </button>
+          </div>
+          <button class="btn-reset-level" id="btn-reset-level">✕ 방문 취소 (미방문으로 변경)</button>
         </div>
 
-        <!-- 2. Recommended Spots Checkboxes -->
+        <!-- 2. Recommended 10 Spots Checkboxes -->
         <div class="drawer-section">
           <div class="section-title">
-            <span>🌟 꼭 가봐야 할 대표 명소</span>
-            <span class="section-subtitle" id="spots-checked-count">(0/0 완료)</span>
+            <div class="section-title-left">
+              <span>🌟 전문 여행가 추천 대표 10선</span>
+              <span class="section-subtitle" id="spots-checked-count">(0/10 완료)</span>
+            </div>
+            <div class="spots-quick-actions">
+              <button class="btn-text-action" id="btn-check-all-spots">모두 선택</button>
+              <span class="action-divider">·</span>
+              <button class="btn-text-action" id="btn-uncheck-all-spots">모두 해제</button>
+            </div>
           </div>
           <div class="spots-list" id="drawer-spots-list">
-            <!-- Dynamic Spots Checkboxes injected by app.js -->
+            <!-- 10 Curated Spots Injected Dynamically by app.js -->
           </div>
 
           <!-- Add Custom Spot Field -->
           <div class="add-spot-box">
-            <input type="text" id="add-spot-input" placeholder="내가 가본 나만의 장소 추가...">
+            <input type="text" id="add-spot-input" placeholder="내가 다녀온 나만의 숨은 명소 추가...">
             <button id="btn-add-spot">+ 추가</button>
           </div>
         </div>
 
         <!-- 3. Visit Date Picker -->
         <div class="drawer-section">
-          <div class="section-title">📅 방문 일자 / 시기</div>
+          <div class="section-title">
+            <span>📅 방문 일자 / 시기</span>
+          </div>
           <div class="date-picker-wrap">
             <input type="date" id="visit-date-input">
           </div>
@@ -161,7 +204,9 @@
 
         <!-- 4. Visit Notes / Memo -->
         <div class="drawer-section">
-          <div class="section-title">📝 여행 메모 & 한줄평</div>
+          <div class="section-title">
+            <span>📝 여행 메모 & 한줄평</span>
+          </div>
           <div class="memo-wrap">
             <textarea id="visit-memo-input" placeholder="이 지역에서 기억에 남는 추억, 맛집, 여행 팁을 자유롭게 기록해 보세요..."></textarea>
           </div>
@@ -181,7 +226,7 @@
         <button class="btn-close" id="btn-close-backup">✕</button>
       </div>
       <div class="modal-content">
-        모든 여행 기록과 체크리스트는 현재 사용 중인 브라우저에 안전하게 자동 저장되어 있습니다.<br><br>
+        모든 167개 시·군 여행 기록과 10대 명소 체크리스트는 현재 사용 중인 브라우저에 안전하게 자동 저장되어 있습니다.<br><br>
         PC와 모바일 기기 간 기록을 옮기거나 안전하게 보관하시려면 JSON 파일로 백업하고 복원하실 수 있습니다.
       </div>
       <div class="backup-actions">
@@ -200,13 +245,12 @@
   </div>
 
   <!-- ================= Scripts ================= -->
-  <!-- D3.js and TopoJSON via High-Reliability CDNs -->
+  <!-- D3.js via High-Reliability CDN -->
   <script src="https://d3js.org/d3.v7.min.js"></script>
-  <script src="https://unpkg.com/topojson-client@3"></script>
 
-  <!-- Embedded Local TopoJSON & Curated Landmarks DB -->
-  <script src="map-data.js"></script>
-  <script src="places-data.js"></script>
+  <!-- 167 Consolidated Regions GeoJSON & Expert 10 Landmarks DB -->
+  <script src="map-data-167.js"></script>
+  <script src="places-data-167.js"></script>
 
   <!-- Core App Logic -->
   <script src="app.js"></script>

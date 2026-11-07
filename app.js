@@ -1,16 +1,21 @@
 /* ==========================================================================
-   대한민국 여행 색칠 지도 (Korea Travel Map) - Core JavaScript Engine
+   대한민국 여행 색칠 지도 (Korea Travel Map) - High-End JavaScript Engine
    ========================================================================== */
 
 // --- Global Application State ---
+const TOTAL_REGIONS = 167;
+const TOTAL_CURATED_SPOTS = 1670;
+
 const AppState = {
   data: {
-    visited: {} // { [code]: { visited: bool, visitDate: string, checkedSpots: [], customSpots: [], memo: string } }
+    visited: {} // { [code]: { level: 0..4, visitDate: string, checkedSpots: [], customSpots: [], memo: string } }
   },
   currentRegionCode: null,
   currentProvinceFilter: 'all',
+  showLabels: false,
   svg: null,
   g: null,
+  labelsGroup: null,
   projection: null,
   pathGenerator: null,
   zoom: null,
@@ -19,21 +24,29 @@ const AppState = {
   height: 0
 };
 
-// Storage Key
-const STORAGE_KEY = 'korea_travel_map_records_v1';
+// Storage Key (V2 with 167 regions & 5 levels)
+const STORAGE_KEY = 'korea_travel_map_167_v2';
+const OLD_STORAGE_KEY = 'korea_travel_map_records_v1';
 
-// Province Name to Code Prefix Mapping
+// Province Name to Code Prefix Mapping (Consolidated 167 Regions)
 const PROVINCE_MAP = {
   'all': null,
-  'seoul': '11',
-  'gyeonggi': '31',
-  'incheon': '23',
-  'gangwon': '32',
-  'chungcheong': ['33', '34', '25', '29'],
-  'jeolla': ['35', '36', '24'],
-  'gyeongsang': ['37', '38', '21', '22', '26'],
-  'jeju': '39',
+  'capital': ['11', '31', '23'],                 // 수도권: 서울(1), 경기(31), 인천(3) = 35곳
+  'gangwon': ['32'],                            // 강원권: 강원(18) = 18곳
+  'chungcheong': ['25', '29', '33', '34'],       // 충청권: 대전(1), 세종(1), 충북(11), 충남(15) = 28곳
+  'jeolla': ['24', '35', '36'],                 // 호남권: 광주(1), 전북(14), 전남(22) = 37곳
+  'gyeongsang': ['21', '22', '26', '37', '38'], // 영남권: 부산(2), 대구(2), 울산(2), 경북(23), 경남(18) = 47곳
+  'jeju': ['39'],                               // 제주권: 제주(2) = 2곳
   'visited_only': 'visited'
+};
+
+// Level Meta Information
+const LEVEL_META = {
+  0: { label: '미방문', color: '#f1f5f9', stroke: '#cbd5e1', emoji: '⬜' },
+  1: { label: '당일치기', color: '#6ee7b7', stroke: '#059669', emoji: '🟢' },
+  2: { label: '숙박 여행', color: '#10b981', stroke: '#047857', emoji: '🏕️' },
+  3: { label: '단골·자주', color: '#3b82f6', stroke: '#1d4ed8', emoji: '🚀' },
+  4: { label: '거주·고향', color: '#8b5cf6', stroke: '#6d28d9', emoji: '👑' }
 };
 
 // --- Initialization ---
@@ -47,12 +60,25 @@ document.addEventListener('DOMContentLoaded', () => {
 // --- LocalStorage Operations ---
 function loadStoredData() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    let raw = localStorage.getItem(STORAGE_KEY);
+    // Backward compatibility with V1
+    if (!raw) {
+      const oldRaw = localStorage.getItem(OLD_STORAGE_KEY);
+      if (oldRaw) {
+        raw = oldRaw;
+      }
+    }
+
     if (raw) {
       AppState.data = JSON.parse(raw);
       if (!AppState.data.visited) AppState.data.visited = {};
-      // Ensure arrays exist
-      Object.values(AppState.data.visited).forEach(rec => {
+      
+      // Upgrade existing records to 5-level format
+      Object.keys(AppState.data.visited).forEach(code => {
+        const rec = AppState.data.visited[code];
+        if (typeof rec.level === 'undefined') {
+          rec.level = rec.visited ? 2 : 0;
+        }
         if (!rec.checkedSpots) rec.checkedSpots = [];
         if (!rec.customSpots) rec.customSpots = [];
       });
@@ -84,13 +110,12 @@ function initMap() {
 
   AppState.g = AppState.svg.append('g').attr('id', 'map-group');
 
-  if (typeof KOREA_TOPO_DATA === 'undefined') {
-    console.error('KOREA_TOPO_DATA is not defined!');
+  if (typeof KOREA_167_GEO === 'undefined') {
+    console.error('KOREA_167_GEO is not defined!');
     return;
   }
 
-  const objName = Object.keys(KOREA_TOPO_DATA.objects)[0];
-  AppState.geojson = topojson.feature(KOREA_TOPO_DATA, KOREA_TOPO_DATA.objects[objName]);
+  AppState.geojson = KOREA_167_GEO;
 
   // Mercator Projection centered on South Korea
   AppState.projection = d3.geoMercator().fitSize([AppState.width, AppState.height], AppState.geojson);
@@ -105,7 +130,7 @@ function initMap() {
 
   AppState.svg.call(AppState.zoom);
 
-  // Render Municipalities (시·군·구 251개)
+  // 1. Render Municipalities (167 Regions)
   AppState.g.selectAll('path.municipality')
     .data(AppState.geojson.features)
     .enter()
@@ -119,16 +144,20 @@ function initMap() {
     .on('mouseleave', handleMouseLeave)
     .on('click', handleRegionClick);
 
-  // Province Boundaries
-  if (KOREA_TOPO_DATA.objects[objName]) {
-    const provinceMesh = topojson.mesh(KOREA_TOPO_DATA, KOREA_TOPO_DATA.objects[objName], (a, b) => {
-      return a.properties.code.substring(0, 2) !== b.properties.code.substring(0, 2);
-    });
-    AppState.g.append('path')
-      .datum(provinceMesh)
-      .attr('class', 'province-mesh')
-      .attr('d', AppState.pathGenerator);
-  }
+  // 2. Render Region Text Labels Layer
+  AppState.labelsGroup = AppState.g.append('g')
+    .attr('class', `map-labels-group ${AppState.showLabels ? 'show-labels' : ''}`);
+
+  AppState.labelsGroup.selectAll('text.map-label')
+    .data(AppState.geojson.features)
+    .enter()
+    .append('text')
+    .attr('class', 'map-label')
+    .attr('transform', d => {
+      const centroid = AppState.pathGenerator.centroid(d);
+      return `translate(${centroid[0]}, ${centroid[1]})`;
+    })
+    .text(d => d.properties.name);
 
   updateMapColors();
 
@@ -141,12 +170,15 @@ function initMap() {
       AppState.height = newH;
       AppState.projection.fitSize([AppState.width, AppState.height], AppState.geojson);
       AppState.g.selectAll('path.municipality').attr('d', AppState.pathGenerator);
-      AppState.g.selectAll('path.province-mesh').attr('d', AppState.pathGenerator);
+      AppState.labelsGroup.selectAll('text.map-label').attr('transform', d => {
+        const centroid = AppState.pathGenerator.centroid(d);
+        return `translate(${centroid[0]}, ${centroid[1]})`;
+      });
     }
   }, 200));
 }
 
-// Update Map Fill Colors
+// Update Map Fill Colors according to 5 Levels
 function updateMapColors() {
   if (!AppState.g) return;
 
@@ -154,24 +186,25 @@ function updateMapColors() {
     .each(function(d) {
       const code = d.properties.code;
       const record = AppState.data.visited[code];
-      const isVisited = record && record.visited;
+      const level = (record && typeof record.level === 'number') ? record.level : 0;
 
       const elem = d3.select(this);
-      elem.classed('visited', isVisited);
+      
+      // Apply level class (level-0 to level-4)
+      elem.attr('class', `municipality level-${level}`);
       elem.classed('selected', AppState.currentRegionCode === code);
 
+      // Filter by Province
       if (AppState.currentProvinceFilter !== 'all') {
         const filterVal = PROVINCE_MAP[AppState.currentProvinceFilter];
         let match = false;
         if (filterVal === 'visited') {
-          match = isVisited;
+          match = level > 0;
         } else if (Array.isArray(filterVal)) {
-          match = filterVal.includes(code.substring(0, 2));
-        } else if (typeof filterVal === 'string') {
-          match = code.startsWith(filterVal);
+          match = filterVal.some(prefix => code.startsWith(prefix));
         }
 
-        elem.style('opacity', match ? 1 : 0.22);
+        elem.style('opacity', match ? 1 : 0.2);
       } else {
         elem.style('opacity', 1);
       }
@@ -185,21 +218,23 @@ function handleMouseEnter(event, d) {
   if (window.innerWidth <= 768) return; // Suppress on mobile
 
   const code = d.properties.code;
-  const placeInfo = (typeof PLACES_DATA !== 'undefined' && PLACES_DATA[code]) || {
+  const placeInfo = (typeof PLACES_167_DATA !== 'undefined' && PLACES_167_DATA[code]) || {
     fullName: d.properties.name,
     spots: ['대표 명소 탐방', '지역 전통시장', '관광지']
   };
 
-  const isVisited = AppState.data.visited[code] && AppState.data.visited[code].visited;
+  const record = AppState.data.visited[code];
+  const level = (record && typeof record.level === 'number') ? record.level : 0;
+  const meta = LEVEL_META[level];
 
   document.getElementById('tt-title').textContent = placeInfo.fullName;
   const badge = document.getElementById('tt-badge');
-  badge.textContent = isVisited ? '✅ 방문 완료' : '⬜ 미방문';
-  badge.className = `tooltip-badge ${isVisited ? 'visited' : 'unvisited'}`;
+  badge.textContent = `${meta.emoji} ${meta.label}`;
+  badge.className = `tooltip-badge lvl-${level}`;
 
   const spotList = document.getElementById('tt-spots');
   spotList.innerHTML = '';
-  placeInfo.spots.slice(0, 4).forEach(s => {
+  (placeInfo.spots || []).slice(0, 4).forEach(s => {
     const li = document.createElement('li');
     li.textContent = s;
     spotList.appendChild(li);
@@ -225,6 +260,17 @@ function handleMouseLeave() {
 
 function handleRegionClick(event, d) {
   const code = d.properties.code;
+  
+  // If clicking an unvisited region, auto-set default to Level 2 (숙박) on first click for convenience
+  if (!AppState.data.visited[code] || AppState.data.visited[code].level === 0) {
+    if (!AppState.data.visited[code]) {
+      AppState.data.visited[code] = { level: 2, visitDate: '', checkedSpots: [], customSpots: [], memo: '' };
+    } else {
+      AppState.data.visited[code].level = 2;
+    }
+    saveStoredData();
+  }
+
   openRegionDrawer(code);
 }
 
@@ -233,16 +279,16 @@ function openRegionDrawer(code) {
   AppState.currentRegionCode = code;
   updateMapColors();
 
-  const placeInfo = (typeof PLACES_DATA !== 'undefined' && PLACES_DATA[code]) || {
+  const placeInfo = (typeof PLACES_167_DATA !== 'undefined' && PLACES_167_DATA[code]) || {
     name: code,
     fullName: code,
-    name_eng: '',
+    province: '',
     spots: []
   };
 
   if (!AppState.data.visited[code]) {
     AppState.data.visited[code] = {
-      visited: false,
+      level: 0,
       visitDate: '',
       checkedSpots: [],
       customSpots: [],
@@ -254,11 +300,11 @@ function openRegionDrawer(code) {
   if (!record.checkedSpots) record.checkedSpots = [];
   if (!record.customSpots) record.customSpots = [];
 
-  document.getElementById('drawer-region-title').textContent = placeInfo.fullName;
-  document.getElementById('drawer-region-eng').textContent = placeInfo.name_eng || placeInfo.province;
+  document.getElementById('drawer-province-tag').textContent = placeInfo.province || '대한민국';
+  document.getElementById('drawer-region-title').textContent = placeInfo.name;
 
-  renderVisitToggle(record.visited);
-  renderSpotsList(placeInfo.spots, record.checkedSpots, record.customSpots);
+  renderLevelSelector(record.level);
+  renderSpotsList(placeInfo.fullName, placeInfo.spots, record.checkedSpots, record.customSpots);
 
   document.getElementById('visit-date-input').value = record.visitDate || '';
   document.getElementById('visit-memo-input').value = record.memo || '';
@@ -274,45 +320,42 @@ function closeRegionDrawer() {
   updateMapColors();
 }
 
-function renderVisitToggle(isVisited) {
-  const banner = document.getElementById('visit-toggle-card');
-  const btn = document.getElementById('visit-toggle-btn');
-  const statusTitle = document.getElementById('visit-status-title');
-  const statusDesc = document.getElementById('visit-status-desc');
+// Render Level Selector Buttons
+function renderLevelSelector(currentLevel) {
+  const badge = document.getElementById('current-level-badge');
+  const meta = LEVEL_META[currentLevel || 0];
+  badge.textContent = `${meta.emoji} ${meta.label}`;
+  badge.className = `level-panel-badge lvl-${currentLevel || 0}`;
 
-  if (isVisited) {
-    banner.classList.add('is-visited');
-    statusTitle.textContent = '✈️ 다녀왔어요! (색칠됨)';
-    statusDesc.textContent = '지도에 예쁘게 내 발자국이 표시되어 있어요.';
-    btn.textContent = '방문 취소';
-    btn.className = 'toggle-btn btn-unvisit';
-  } else {
-    banner.classList.remove('is-visited');
-    statusTitle.textContent = '아직 안 가본 곳이에요';
-    statusDesc.textContent = '방문하셨다면 색칠 버튼을 눌러주세요.';
-    btn.textContent = '방문 완료 (색칠)';
-    btn.className = 'toggle-btn btn-mark-visit';
+  for (let i = 1; i <= 4; i++) {
+    const btn = document.getElementById(`btn-lvl-${i}`);
+    if (btn) {
+      btn.classList.toggle('active', currentLevel === i);
+    }
   }
 }
 
-function toggleCurrentRegionVisit() {
+function setRegionLevel(level) {
   const code = AppState.currentRegionCode;
   if (!code) return;
 
-  const record = AppState.data.visited[code];
-  record.visited = !record.visited;
+  if (!AppState.data.visited[code]) {
+    AppState.data.visited[code] = { level: 0, visitDate: '', checkedSpots: [], customSpots: [], memo: '' };
+  }
 
-  renderVisitToggle(record.visited);
+  AppState.data.visited[code].level = level;
+  renderLevelSelector(level);
   saveStoredData();
 }
 
-function renderSpotsList(presetSpots, checkedSpots, customSpots) {
+// Render Curated 10 Spots List + Naver Map Links
+function renderSpotsList(regionFullName, presetSpots, checkedSpots, customSpots) {
   const container = document.getElementById('drawer-spots-list');
   container.innerHTML = '';
 
   const allSpots = [
-    ...presetSpots.map(s => ({ name: s, isCustom: false })),
-    ...customSpots.map(s => ({ name: s, isCustom: true }))
+    ...(presetSpots || []).map(s => ({ name: s, isCustom: false })),
+    ...(customSpots || []).map(s => ({ name: s, isCustom: true }))
   ];
 
   const checkedCount = allSpots.filter(s => checkedSpots.includes(s.name)).length;
@@ -334,8 +377,21 @@ function renderSpotsList(presetSpots, checkedSpots, customSpots) {
     nameSpan.className = 'spot-name';
     nameSpan.textContent = spot.name;
 
+    // Direct Naver Map Search Link
+    const cleanSpotName = spot.name.split('&')[0].split('(')[0].trim();
+    const naverSearchQuery = `${regionFullName} ${cleanSpotName}`;
+    const naverLink = document.createElement('a');
+    naverLink.className = 'btn-naver-map';
+    naverLink.href = `https://map.naver.com/p/search/${encodeURIComponent(naverSearchQuery)}`;
+    naverLink.target = '_blank';
+    naverLink.rel = 'noopener noreferrer';
+    naverLink.title = '네이버 지도에서 위치·리뷰 보기';
+    naverLink.innerHTML = '🗺️ 지도';
+    naverLink.addEventListener('click', (e) => e.stopPropagation());
+
     item.appendChild(cb);
     item.appendChild(nameSpan);
+    item.appendChild(naverLink);
 
     if (spot.isCustom) {
       const delBtn = document.createElement('button');
@@ -350,7 +406,7 @@ function renderSpotsList(presetSpots, checkedSpots, customSpots) {
     }
 
     item.addEventListener('click', (e) => {
-      if (e.target !== cb && e.target.tagName !== 'BUTTON') {
+      if (e.target !== cb && e.target.tagName !== 'A' && e.target.tagName !== 'BUTTON') {
         cb.checked = !cb.checked;
         toggleSpotChecked(spot.name);
       }
@@ -370,15 +426,46 @@ function toggleSpotChecked(spotName) {
     record.checkedSpots.splice(idx, 1);
   } else {
     record.checkedSpots.push(spotName);
-    if (!record.visited) {
-      record.visited = true;
-      renderVisitToggle(true);
+    // Auto-mark as visited if currently level 0
+    if (record.level === 0) {
+      record.level = 2; // Default to overnight
+      renderLevelSelector(record.level);
     }
   }
 
   saveStoredData();
-  const placeInfo = PLACES_DATA[code];
-  renderSpotsList(placeInfo.spots, record.checkedSpots, record.customSpots);
+  const placeInfo = PLACES_167_DATA[code];
+  renderSpotsList(placeInfo.fullName, placeInfo.spots, record.checkedSpots, record.customSpots);
+}
+
+function checkAllSpots() {
+  const code = AppState.currentRegionCode;
+  if (!code) return;
+
+  const record = AppState.data.visited[code];
+  const placeInfo = PLACES_167_DATA[code];
+  const allSpots = [...(placeInfo.spots || []), ...(record.customSpots || [])];
+
+  record.checkedSpots = [...allSpots];
+  if (record.level === 0) {
+    record.level = 2;
+    renderLevelSelector(record.level);
+  }
+
+  saveStoredData();
+  renderSpotsList(placeInfo.fullName, placeInfo.spots, record.checkedSpots, record.customSpots);
+}
+
+function uncheckAllSpots() {
+  const code = AppState.currentRegionCode;
+  if (!code) return;
+
+  const record = AppState.data.visited[code];
+  const placeInfo = PLACES_167_DATA[code];
+  record.checkedSpots = [];
+
+  saveStoredData();
+  renderSpotsList(placeInfo.fullName, placeInfo.spots, record.checkedSpots, record.customSpots);
 }
 
 function addCustomSpot() {
@@ -391,15 +478,15 @@ function addCustomSpot() {
   if (!record.customSpots.includes(val)) {
     record.customSpots.push(val);
     record.checkedSpots.push(val);
-    if (!record.visited) {
-      record.visited = true;
-      renderVisitToggle(true);
+    if (record.level === 0) {
+      record.level = 2;
+      renderLevelSelector(record.level);
     }
     saveStoredData();
     input.value = '';
 
-    const placeInfo = PLACES_DATA[code];
-    renderSpotsList(placeInfo.spots, record.checkedSpots, record.customSpots);
+    const placeInfo = PLACES_167_DATA[code];
+    renderSpotsList(placeInfo.fullName, placeInfo.spots, record.checkedSpots, record.customSpots);
   }
 }
 
@@ -412,34 +499,100 @@ function deleteCustomSpot(spotName) {
   record.checkedSpots = record.checkedSpots.filter(s => s !== spotName);
 
   saveStoredData();
-  const placeInfo = PLACES_DATA[code];
-  renderSpotsList(placeInfo.spots, record.checkedSpots, record.customSpots);
+  const placeInfo = PLACES_167_DATA[code];
+  renderSpotsList(placeInfo.fullName, placeInfo.spots, record.checkedSpots, record.customSpots);
 }
 
-// --- Statistics ---
+// --- Real-Time Statistics ---
 function updateStats() {
-  const totalRegions = 251;
-  const visitedKeys = Object.keys(AppState.data.visited).filter(k => AppState.data.visited[k].visited);
-  const visitedCount = visitedKeys.length;
-  const percentage = ((visitedCount / totalRegions) * 100).toFixed(1);
+  const visitedCodes = Object.keys(AppState.data.visited).filter(k => {
+    return AppState.data.visited[k] && AppState.data.visited[k].level > 0;
+  });
+  const visitedCount = visitedCodes.length;
+  const percentage = ((visitedCount / TOTAL_REGIONS) * 100).toFixed(1);
 
+  // Count by levels
+  let lvl1 = 0, lvl2 = 0, lvl3 = 0, lvl4 = 0;
   let totalSpots = 0;
+
   Object.values(AppState.data.visited).forEach(rec => {
+    if (rec.level === 1) lvl1++;
+    else if (rec.level === 2) lvl2++;
+    else if (rec.level === 3) lvl3++;
+    else if (rec.level === 4) lvl4++;
+
     if (rec.checkedSpots) totalSpots += rec.checkedSpots.length;
   });
 
   document.getElementById('stat-visited-count').textContent = visitedCount;
-  document.getElementById('stat-total-count').textContent = totalRegions;
   document.getElementById('stat-percentage').textContent = `${percentage}%`;
-  document.getElementById('stat-spots-count').textContent = totalSpots;
   document.getElementById('stat-progress-bar').style.width = `${percentage}%`;
+
+  document.getElementById('stat-lvl1-count').textContent = lvl1;
+  document.getElementById('stat-lvl2-count').textContent = lvl2;
+  document.getElementById('stat-lvl3-count').textContent = lvl3;
+  document.getElementById('stat-lvl4-count').textContent = lvl4;
+
+  document.getElementById('stat-spots-count').textContent = totalSpots;
+}
+
+// --- Random Travel Explorer (🎲) ---
+function pickRandomTravelDestination() {
+  // Find all unvisited regions (level === 0 or undefined)
+  const allCodes = Object.keys(PLACES_167_DATA);
+  const unvisitedCodes = allCodes.filter(c => {
+    const rec = AppState.data.visited[c];
+    return !rec || rec.level === 0;
+  });
+
+  if (unvisitedCodes.length === 0) {
+    showToast('🏆 축하합니다! 전국 167개 시·군을 모두 여행하셨습니다!');
+    return;
+  }
+
+  // Random pick
+  const randomIndex = Math.floor(Math.random() * unvisitedCodes.length);
+  const pickedCode = unvisitedCodes[randomIndex];
+  const placeInfo = PLACES_167_DATA[pickedCode];
+
+  // Show Toast
+  showToast(`🎲 오늘의 추천 여행지: [${placeInfo.fullName}] 로 떠나보세요!`);
+
+  // Zoom to picked region
+  focusOnRegion(pickedCode);
+
+  // Open Drawer
+  openRegionDrawer(pickedCode);
+}
+
+function showToast(message) {
+  const toast = document.getElementById('random-toast');
+  toast.textContent = message;
+  toast.classList.add('show');
+  setTimeout(() => {
+    toast.classList.remove('show');
+  }, 3500);
 }
 
 // --- Event Listeners Setup ---
 function setupEventListeners() {
-  document.getElementById('visit-toggle-btn').addEventListener('click', toggleCurrentRegionVisit);
+  // Level selector buttons
+  for (let i = 1; i <= 4; i++) {
+    const btn = document.getElementById(`btn-lvl-${i}`);
+    if (btn) {
+      btn.addEventListener('click', () => setRegionLevel(i));
+    }
+  }
+
+  document.getElementById('btn-reset-level').addEventListener('click', () => {
+    setRegionLevel(0);
+  });
+
   document.getElementById('btn-close-drawer').addEventListener('click', closeRegionDrawer);
   document.getElementById('drawer-backdrop').addEventListener('click', closeRegionDrawer);
+
+  document.getElementById('btn-check-all-spots').addEventListener('click', checkAllSpots);
+  document.getElementById('btn-uncheck-all-spots').addEventListener('click', uncheckAllSpots);
 
   document.getElementById('btn-add-spot').addEventListener('click', addCustomSpot);
   document.getElementById('add-spot-input').addEventListener('keypress', (e) => {
@@ -461,6 +614,19 @@ function setupEventListeners() {
       saveStoredData();
     }
   }, 400));
+
+  // Random Explorer
+  document.getElementById('btn-random-pick').addEventListener('click', pickRandomTravelDestination);
+
+  // Toggle Map Labels
+  const btnToggleLabels = document.getElementById('btn-toggle-labels');
+  btnToggleLabels.addEventListener('click', () => {
+    AppState.showLabels = !AppState.showLabels;
+    btnToggleLabels.classList.toggle('active', AppState.showLabels);
+    if (AppState.labelsGroup) {
+      AppState.labelsGroup.classed('show-labels', AppState.showLabels);
+    }
+  });
 
   // Zoom Controls
   document.getElementById('btn-zoom-in').addEventListener('click', () => {
@@ -509,8 +675,7 @@ function zoomToProvince(filterKey) {
   const filterVal = PROVINCE_MAP[filterKey];
   const targetFeatures = AppState.geojson.features.filter(f => {
     const c = f.properties.code;
-    if (Array.isArray(filterVal)) return filterVal.includes(c.substring(0, 2));
-    return c.startsWith(filterVal);
+    return filterVal.some(prefix => c.startsWith(prefix));
   });
 
   if (targetFeatures.length === 0) return;
@@ -547,13 +712,14 @@ function setupSearch() {
     }
 
     const matches = [];
-    Object.values(PLACES_DATA).forEach(place => {
+    Object.values(PLACES_167_DATA).forEach(place => {
       const matchName = place.fullName.toLowerCase().includes(query) || place.name.toLowerCase().includes(query);
-      const matchSpot = place.spots.some(s => s.toLowerCase().includes(query));
+      const matchSpot = (place.spots || []).some(s => s.toLowerCase().includes(query));
 
       if (matchName || matchSpot) {
         matches.push({
           code: place.code,
+          name: place.name,
           fullName: place.fullName,
           matchedSpot: matchSpot ? place.spots.find(s => s.toLowerCase().includes(query)) : null
         });
@@ -562,12 +728,15 @@ function setupSearch() {
 
     if (matches.length > 0) {
       searchDropdown.innerHTML = '';
-      matches.slice(0, 8).forEach(item => {
+      matches.slice(0, 10).forEach(item => {
         const div = document.createElement('div');
         div.className = 'search-item';
         div.innerHTML = `
-          <span><strong>${item.fullName}</strong></span>
-          ${item.matchedSpot ? `<span style="font-size:11px;color:#059669;">📍 ${item.matchedSpot}</span>` : ''}
+          <div class="search-item-top">
+            <strong>${item.name}</strong>
+            <span class="search-item-prov">${item.fullName}</span>
+          </div>
+          ${item.matchedSpot ? `<div class="search-item-spot">📍 ${item.matchedSpot}</div>` : ''}
         `;
         div.addEventListener('click', () => {
           searchInput.value = '';
@@ -598,10 +767,10 @@ function focusOnRegion(code) {
   const bounds = AppState.pathGenerator.bounds(feature);
   const x = (bounds[0][0] + bounds[1][0]) / 2;
   const y = (bounds[0][1] + bounds[1][1]) / 2;
-  const scale = 4.5;
+  const scale = 5.0;
   const translate = [AppState.width / 2 - scale * x, AppState.height / 2 - scale * y];
 
-  AppState.svg.transition().duration(500).call(
+  AppState.svg.transition().duration(600).call(
     AppState.zoom.transform,
     d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale)
   );
@@ -610,9 +779,9 @@ function focusOnRegion(code) {
 // --- Bulletproof Image Export (PNG) ---
 function exportMapAsImage() {
   const svgElement = document.getElementById('korea-map-svg');
-  const totalRegions = 251;
-  const visitedCount = Object.keys(AppState.data.visited).filter(k => AppState.data.visited[k].visited).length;
-  const percentage = ((visitedCount / totalRegions) * 100).toFixed(1);
+  const visitedCodes = Object.keys(AppState.data.visited).filter(k => AppState.data.visited[k] && AppState.data.visited[k].level > 0);
+  const visitedCount = visitedCodes.length;
+  const percentage = ((visitedCount / TOTAL_REGIONS) * 100).toFixed(1);
 
   const clone = svgElement.cloneNode(true);
   clone.setAttribute('width', 1200);
@@ -621,14 +790,23 @@ function exportMapAsImage() {
   const group = clone.querySelector('#map-group');
   if (group) group.removeAttribute('transform');
 
-  // Explicitly apply colors to each path in clone to avoid canvas cross-origin or CSS issues
+  // Explicitly apply 5-level colors
   clone.querySelectorAll('path.municipality').forEach(p => {
     const code = p.getAttribute('data-code');
-    const isVisited = AppState.data.visited[code] && AppState.data.visited[code].visited;
-    p.setAttribute('fill', isVisited ? '#10b981' : '#e2e8f0');
-    p.setAttribute('stroke', isVisited ? '#059669' : '#cbd5e1');
-    p.setAttribute('stroke-width', '0.6');
+    const record = AppState.data.visited[code];
+    const level = (record && typeof record.level === 'number') ? record.level : 0;
+    const meta = LEVEL_META[level];
+
+    p.setAttribute('fill', meta.color);
+    p.setAttribute('stroke', meta.stroke);
+    p.setAttribute('stroke-width', '0.7');
   });
+
+  // Hide label text in export for crystal clarity unless user enabled
+  if (!AppState.showLabels) {
+    const labelsInClone = clone.querySelector('.map-labels-group');
+    if (labelsInClone) labelsInClone.remove();
+  }
 
   const serializer = new XMLSerializer();
   const svgString = serializer.serializeToString(clone);
@@ -648,50 +826,58 @@ function exportMapAsImage() {
     ctx.fillStyle = '#f8fafc';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Title Card
+    // Title
     ctx.fillStyle = '#0f172a';
     ctx.font = 'bold 44px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('대한민국 방방곡곡 여행 지도', 600, 90);
 
     ctx.fillStyle = '#64748b';
-    ctx.font = '500 24px sans-serif';
-    ctx.fillText('나의 전국 251개 시·군·구 여행 발자국', 600, 135);
+    ctx.font = '500 22px sans-serif';
+    ctx.fillText('나의 전국 167개 시·군 여행 발자국', 600, 130);
 
     // Stats Card
     ctx.fillStyle = '#ffffff';
     ctx.strokeStyle = '#e2e8f0';
     ctx.lineWidth = 2;
-    roundRect(ctx, 200, 170, 800, 100, 20);
+    roundRect(ctx, 200, 160, 800, 90, 20);
     ctx.fill();
     ctx.stroke();
 
     ctx.fillStyle = '#059669';
-    ctx.font = 'bold 36px sans-serif';
-    ctx.fillText(`${visitedCount} / ${totalRegions}곳`, 450, 232);
+    ctx.font = 'bold 34px sans-serif';
+    ctx.fillText(`${visitedCount} / ${TOTAL_REGIONS}곳`, 450, 218);
 
     ctx.fillStyle = '#3b82f6';
-    ctx.fillText(`${percentage}% 정복`, 750, 232);
+    ctx.fillText(`${percentage}% 정복`, 750, 218);
 
     // Draw Map
-    ctx.drawImage(img, 0, 280, 1200, 1250);
+    ctx.drawImage(img, 0, 260, 1200, 1260);
 
-    // Legend
-    ctx.fillStyle = '#10b981';
-    roundRect(ctx, 430, 1540, 24, 24, 4);
-    ctx.fill();
-    ctx.fillStyle = '#1e293b';
-    ctx.font = 'bold 20px sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText('방문 완료', 465, 1558);
+    // 5-Level Legend at Bottom
+    const legendItems = [
+      { label: '거주/고향', color: '#8b5cf6' },
+      { label: '단골/자주', color: '#3b82f6' },
+      { label: '숙박 여행', color: '#10b981' },
+      { label: '당일치기', color: '#6ee7b7' },
+      { label: '미방문', color: '#f1f5f9', stroke: '#cbd5e1' }
+    ];
 
-    ctx.fillStyle = '#e2e8f0';
-    roundRect(ctx, 620, 1540, 24, 24, 4);
-    ctx.fill();
-    ctx.strokeStyle = '#cbd5e1';
-    ctx.stroke();
-    ctx.fillStyle = '#64748b';
-    ctx.fillText('미방문', 655, 1558);
+    let startX = 260;
+    legendItems.forEach(item => {
+      ctx.fillStyle = item.color;
+      roundRect(ctx, startX, 1540, 22, 22, 4);
+      ctx.fill();
+      if (item.stroke) {
+        ctx.strokeStyle = item.stroke;
+        ctx.stroke();
+      }
+      ctx.fillStyle = '#334155';
+      ctx.font = 'bold 18px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(item.label, startX + 30, 1557);
+      startX += 140;
+    });
 
     // Download
     const a = document.createElement('a');
@@ -735,7 +921,7 @@ function setupBackupModal() {
     const jsonStr = JSON.stringify(AppState.data, null, 2);
     const blob = new Blob([jsonStr], { type: 'application/json' });
     const a = document.createElement('a');
-    a.download = `korea_travel_backup_${new Date().toISOString().slice(0,10)}.json`;
+    a.download = `korea_travel_167_backup_${new Date().toISOString().slice(0,10)}.json`;
     a.href = URL.createObjectURL(blob);
     a.click();
   });
