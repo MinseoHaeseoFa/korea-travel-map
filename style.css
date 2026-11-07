@@ -763,9 +763,11 @@ header {
 
 .lvl-btn {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 10px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
   background: #fff;
@@ -774,6 +776,20 @@ header {
   font-weight: 600;
   color: var(--text-main);
   transition: all var(--transition-fast);
+  text-align: center;
+}
+
+.lvl-emoji {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.lvl-name {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  word-break: keep-all;
 }
 
 .lvl-btn:hover {
