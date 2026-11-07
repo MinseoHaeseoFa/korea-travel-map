@@ -651,16 +651,22 @@ header {
   display: flex;
   flex-direction: column;
   z-index: 40;
-  transform: translateX(100%);
-  transition: transform var(--transition-normal);
   position: absolute;
   top: 0;
   right: 0;
   bottom: 0;
+  transform: translateX(100%);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: transform var(--transition-normal), opacity var(--transition-normal), visibility var(--transition-normal);
 }
 
 .drawer.open {
   transform: translateX(0);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .drawer-header {
