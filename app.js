@@ -51,6 +51,11 @@ function loadStoredData() {
     if (raw) {
       AppState.data = JSON.parse(raw);
       if (!AppState.data.visited) AppState.data.visited = {};
+      // Ensure arrays exist
+      Object.values(AppState.data.visited).forEach(rec => {
+        if (!rec.checkedSpots) rec.checkedSpots = [];
+        if (!rec.customSpots) rec.customSpots = [];
+      });
     }
   } catch (err) {
     console.error('Failed to load localStorage data:', err);
@@ -71,16 +76,14 @@ function saveStoredData() {
 // --- Map Initialization with D3.js ---
 function initMap() {
   const container = document.getElementById('map-container');
-  AppState.width = container.clientWidth;
-  AppState.height = container.clientHeight;
+  AppState.width = container.clientWidth || window.innerWidth;
+  AppState.height = container.clientHeight || (window.innerHeight - 100);
 
   AppState.svg = d3.select('#korea-map-svg');
-  AppState.svg.selectAll('*').remove(); // Clear previous
+  AppState.svg.selectAll('*').remove();
 
-  // Create main grouping for zoom & pan
   AppState.g = AppState.svg.append('g').attr('id', 'map-group');
 
-  // Convert TopoJSON to GeoJSON
   if (typeof KOREA_TOPO_DATA === 'undefined') {
     console.error('KOREA_TOPO_DATA is not defined!');
     return;
@@ -89,11 +92,11 @@ function initMap() {
   const objName = Object.keys(KOREA_TOPO_DATA.objects)[0];
   AppState.geojson = topojson.feature(KOREA_TOPO_DATA, KOREA_TOPO_DATA.objects[objName]);
 
-  // Setup Projection
+  // Mercator Projection centered on South Korea
   AppState.projection = d3.geoMercator().fitSize([AppState.width, AppState.height], AppState.geojson);
   AppState.pathGenerator = d3.geoPath().projection(AppState.projection);
 
-  // Setup Zoom Behavior
+  // Zoom Behavior
   AppState.zoom = d3.zoom()
     .scaleExtent([1, 15])
     .on('zoom', (event) => {
@@ -102,8 +105,8 @@ function initMap() {
 
   AppState.svg.call(AppState.zoom);
 
-  // Render Municipalities (시·군·구)
-  const paths = AppState.g.selectAll('path.municipality')
+  // Render Municipalities (시·군·구 251개)
+  AppState.g.selectAll('path.municipality')
     .data(AppState.geojson.features)
     .enter()
     .append('path')
@@ -116,23 +119,34 @@ function initMap() {
     .on('mouseleave', handleMouseLeave)
     .on('click', handleRegionClick);
 
-  // Initial coloring
+  // Province Boundaries
+  if (KOREA_TOPO_DATA.objects[objName]) {
+    const provinceMesh = topojson.mesh(KOREA_TOPO_DATA, KOREA_TOPO_DATA.objects[objName], (a, b) => {
+      return a.properties.code.substring(0, 2) !== b.properties.code.substring(0, 2);
+    });
+    AppState.g.append('path')
+      .datum(provinceMesh)
+      .attr('class', 'province-mesh')
+      .attr('d', AppState.pathGenerator);
+  }
+
   updateMapColors();
 
-  // Resize Observer for dynamic window resize
+  // Resize handler
   window.addEventListener('resize', debounce(() => {
     const newW = container.clientWidth;
     const newH = container.clientHeight;
-    if (newW !== AppState.width || newH !== AppState.height) {
+    if (newW > 0 && newH > 0 && (newW !== AppState.width || newH !== AppState.height)) {
       AppState.width = newW;
       AppState.height = newH;
       AppState.projection.fitSize([AppState.width, AppState.height], AppState.geojson);
       AppState.g.selectAll('path.municipality').attr('d', AppState.pathGenerator);
+      AppState.g.selectAll('path.province-mesh').attr('d', AppState.pathGenerator);
     }
-  }, 250));
+  }, 200));
 }
 
-// Update Map Fill Colors according to visit state
+// Update Map Fill Colors
 function updateMapColors() {
   if (!AppState.g) return;
 
@@ -144,13 +158,8 @@ function updateMapColors() {
 
       const elem = d3.select(this);
       elem.classed('visited', isVisited);
-      if (AppState.currentRegionCode === code) {
-        elem.classed('selected', true);
-      } else {
-        elem.classed('selected', false);
-      }
+      elem.classed('selected', AppState.currentRegionCode === code);
 
-      // Filter opacity if a province filter is active
       if (AppState.currentProvinceFilter !== 'all') {
         const filterVal = PROVINCE_MAP[AppState.currentProvinceFilter];
         let match = false;
@@ -162,21 +171,19 @@ function updateMapColors() {
           match = code.startsWith(filterVal);
         }
 
-        if (match) {
-          elem.style('opacity', 1).style('pointer-events', 'auto');
-        } else {
-          elem.style('opacity', 0.25).style('pointer-events', 'auto');
-        }
+        elem.style('opacity', match ? 1 : 0.22);
       } else {
-        elem.style('opacity', 1).style('pointer-events', 'auto');
+        elem.style('opacity', 1);
       }
     });
 }
 
-// --- Map Interaction Handlers ---
+// --- Tooltip Logic (Desktop Hover) ---
 const tooltip = document.getElementById('map-tooltip');
 
 function handleMouseEnter(event, d) {
+  if (window.innerWidth <= 768) return; // Suppress on mobile
+
   const code = d.properties.code;
   const placeInfo = (typeof PLACES_DATA !== 'undefined' && PLACES_DATA[code]) || {
     fullName: d.properties.name,
@@ -192,7 +199,7 @@ function handleMouseEnter(event, d) {
 
   const spotList = document.getElementById('tt-spots');
   spotList.innerHTML = '';
-  placeInfo.spots.slice(0, 3).forEach(s => {
+  placeInfo.spots.slice(0, 4).forEach(s => {
     const li = document.createElement('li');
     li.textContent = s;
     spotList.appendChild(li);
@@ -202,13 +209,14 @@ function handleMouseEnter(event, d) {
 }
 
 function handleMouseMove(event) {
+  if (window.innerWidth <= 768) return;
   const container = document.getElementById('map-container');
   const rect = container.getBoundingClientRect();
   const x = event.clientX - rect.left;
   const y = event.clientY - rect.top;
 
   tooltip.style.left = `${x}px`;
-  tooltip.style.top = `${y - 12}px`;
+  tooltip.style.top = `${y - 14}px`;
 }
 
 function handleMouseLeave() {
@@ -220,7 +228,7 @@ function handleRegionClick(event, d) {
   openRegionDrawer(code);
 }
 
-// --- Drawer (Detail Panel) Logic ---
+// --- Detail Drawer / Bottom Sheet ---
 function openRegionDrawer(code) {
   AppState.currentRegionCode = code;
   updateMapColors();
@@ -243,27 +251,25 @@ function openRegionDrawer(code) {
   }
 
   const record = AppState.data.visited[code];
+  if (!record.checkedSpots) record.checkedSpots = [];
+  if (!record.customSpots) record.customSpots = [];
 
-  // Populate Header
   document.getElementById('drawer-region-title').textContent = placeInfo.fullName;
   document.getElementById('drawer-region-eng').textContent = placeInfo.name_eng || placeInfo.province;
 
-  // Visit Toggle Banner
   renderVisitToggle(record.visited);
-
-  // Render Spots Checkboxes
   renderSpotsList(placeInfo.spots, record.checkedSpots, record.customSpots);
 
-  // Render Date & Memo
   document.getElementById('visit-date-input').value = record.visitDate || '';
   document.getElementById('visit-memo-input').value = record.memo || '';
 
-  // Open Drawer
   document.getElementById('region-drawer').classList.add('open');
+  document.getElementById('drawer-backdrop').classList.add('open');
 }
 
 function closeRegionDrawer() {
   document.getElementById('region-drawer').classList.remove('open');
+  document.getElementById('drawer-backdrop').classList.remove('open');
   AppState.currentRegionCode = null;
   updateMapColors();
 }
@@ -364,7 +370,6 @@ function toggleSpotChecked(spotName) {
     record.checkedSpots.splice(idx, 1);
   } else {
     record.checkedSpots.push(spotName);
-    // Auto mark region visited if user checks any spot!
     if (!record.visited) {
       record.visited = true;
       renderVisitToggle(true);
@@ -385,7 +390,7 @@ function addCustomSpot() {
   const record = AppState.data.visited[code];
   if (!record.customSpots.includes(val)) {
     record.customSpots.push(val);
-    record.checkedSpots.push(val); // Auto check added spot
+    record.checkedSpots.push(val);
     if (!record.visited) {
       record.visited = true;
       renderVisitToggle(true);
@@ -411,14 +416,13 @@ function deleteCustomSpot(spotName) {
   renderSpotsList(placeInfo.spots, record.checkedSpots, record.customSpots);
 }
 
-// --- Live Stats Update ---
+// --- Statistics ---
 function updateStats() {
-  const totalRegions = (AppState.geojson && AppState.geojson.features) ? AppState.geojson.features.length : 251;
+  const totalRegions = 251;
   const visitedKeys = Object.keys(AppState.data.visited).filter(k => AppState.data.visited[k].visited);
   const visitedCount = visitedKeys.length;
   const percentage = ((visitedCount / totalRegions) * 100).toFixed(1);
 
-  // Total checked spots
   let totalSpots = 0;
   Object.values(AppState.data.visited).forEach(rec => {
     if (rec.checkedSpots) totalSpots += rec.checkedSpots.length;
@@ -433,19 +437,15 @@ function updateStats() {
 
 // --- Event Listeners Setup ---
 function setupEventListeners() {
-  // Visit Toggle Button in Drawer
   document.getElementById('visit-toggle-btn').addEventListener('click', toggleCurrentRegionVisit);
-
-  // Close Drawer Button
   document.getElementById('btn-close-drawer').addEventListener('click', closeRegionDrawer);
+  document.getElementById('drawer-backdrop').addEventListener('click', closeRegionDrawer);
 
-  // Add Custom Spot
   document.getElementById('btn-add-spot').addEventListener('click', addCustomSpot);
   document.getElementById('add-spot-input').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') addCustomSpot();
   });
 
-  // Date and Memo change listeners
   document.getElementById('visit-date-input').addEventListener('change', (e) => {
     const code = AppState.currentRegionCode;
     if (code) {
@@ -484,14 +484,19 @@ function setupEventListeners() {
     });
   });
 
-  // Search Functionality
+  // Search
   setupSearch();
 
-  // Export Map Image (PNG)
+  // Export Image
   document.getElementById('btn-export-image').addEventListener('click', exportMapAsImage);
 
-  // Backup & Restore Modals
+  // Backup & Restore
   setupBackupModal();
+
+  // Keyboard shortcut: ESC closes drawer
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeRegionDrawer();
+  });
 }
 
 // --- Zoom to Province ---
@@ -593,7 +598,7 @@ function focusOnRegion(code) {
   const bounds = AppState.pathGenerator.bounds(feature);
   const x = (bounds[0][0] + bounds[1][0]) / 2;
   const y = (bounds[0][1] + bounds[1][1]) / 2;
-  const scale = 4;
+  const scale = 4.5;
   const translate = [AppState.width / 2 - scale * x, AppState.height / 2 - scale * y];
 
   AppState.svg.transition().duration(500).call(
@@ -602,34 +607,31 @@ function focusOnRegion(code) {
   );
 }
 
-// --- High-Resolution Image Export (PNG) ---
+// --- Bulletproof Image Export (PNG) ---
 function exportMapAsImage() {
   const svgElement = document.getElementById('korea-map-svg');
   const totalRegions = 251;
   const visitedCount = Object.keys(AppState.data.visited).filter(k => AppState.data.visited[k].visited).length;
   const percentage = ((visitedCount / totalRegions) * 100).toFixed(1);
 
-  // Create offscreen SVG clone with reset transform for full clean map
   const clone = svgElement.cloneNode(true);
   clone.setAttribute('width', 1200);
   clone.setAttribute('height', 1600);
 
-  // Apply default full projection to cloned group
   const group = clone.querySelector('#map-group');
-  if (group) {
-    group.removeAttribute('transform');
-  }
+  if (group) group.removeAttribute('transform');
 
-  // Serialize SVG
+  // Explicitly apply colors to each path in clone to avoid canvas cross-origin or CSS issues
+  clone.querySelectorAll('path.municipality').forEach(p => {
+    const code = p.getAttribute('data-code');
+    const isVisited = AppState.data.visited[code] && AppState.data.visited[code].visited;
+    p.setAttribute('fill', isVisited ? '#10b981' : '#e2e8f0');
+    p.setAttribute('stroke', isVisited ? '#059669' : '#cbd5e1');
+    p.setAttribute('stroke-width', '0.6');
+  });
+
   const serializer = new XMLSerializer();
-  let svgString = serializer.serializeToString(clone);
-
-  // Inject styles into SVG for standalone rendering
-  const styleTag = `<style>
-    .municipality { fill: #e2e8f0; stroke: #cbd5e1; stroke-width: 0.6; }
-    .municipality.visited { fill: #10b981; stroke: #059669; }
-  </style>`;
-  svgString = svgString.replace('>', `>${styleTag}`);
+  const svgString = serializer.serializeToString(clone);
 
   const img = new Image();
   const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
@@ -656,7 +658,7 @@ function exportMapAsImage() {
     ctx.font = '500 24px sans-serif';
     ctx.fillText('나의 전국 251개 시·군·구 여행 발자국', 600, 135);
 
-    // Stats Banner Box
+    // Stats Card
     ctx.fillStyle = '#ffffff';
     ctx.strokeStyle = '#e2e8f0';
     ctx.lineWidth = 2;
@@ -664,25 +666,24 @@ function exportMapAsImage() {
     ctx.fill();
     ctx.stroke();
 
-    // Stats Texts
     ctx.fillStyle = '#059669';
     ctx.font = 'bold 36px sans-serif';
-    ctx.fillText(`${visitedCount} / ${totalRegions}곳`, 450, 230);
+    ctx.fillText(`${visitedCount} / ${totalRegions}곳`, 450, 232);
 
     ctx.fillStyle = '#3b82f6';
-    ctx.fillText(`${percentage}% 정복`, 750, 230);
+    ctx.fillText(`${percentage}% 정복`, 750, 232);
 
     // Draw Map
     ctx.drawImage(img, 0, 280, 1200, 1250);
 
-    // Legend at Bottom
+    // Legend
     ctx.fillStyle = '#10b981';
-    roundRect(ctx, 420, 1540, 24, 24, 4);
+    roundRect(ctx, 430, 1540, 24, 24, 4);
     ctx.fill();
     ctx.fillStyle = '#1e293b';
     ctx.font = 'bold 20px sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText('방문 완료', 455, 1558);
+    ctx.fillText('방문 완료', 465, 1558);
 
     ctx.fillStyle = '#e2e8f0';
     roundRect(ctx, 620, 1540, 24, 24, 4);
@@ -692,7 +693,7 @@ function exportMapAsImage() {
     ctx.fillStyle = '#64748b';
     ctx.fillText('미방문', 655, 1558);
 
-    // Trigger Download
+    // Download
     const a = document.createElement('a');
     a.download = `대한민국_여행지도_${new Date().toISOString().slice(0,10)}.png`;
     a.href = canvas.toDataURL('image/png');
@@ -713,7 +714,7 @@ function roundRect(ctx, x, y, width, height, radius) {
   ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
   ctx.lineTo(x + width, y + height - radius);
   ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-  ctx.lineTo(x + radius, y + height);
+  ctx.lineTo(x + width, y + height);
   ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
   ctx.lineTo(x, y + radius);
   ctx.quadraticCurveTo(x, y, x + radius, y);
@@ -730,7 +731,6 @@ function setupBackupModal() {
     modal.classList.remove('open');
   });
 
-  // Export JSON
   document.getElementById('btn-export-json').addEventListener('click', () => {
     const jsonStr = JSON.stringify(AppState.data, null, 2);
     const blob = new Blob([jsonStr], { type: 'application/json' });
@@ -740,7 +740,6 @@ function setupBackupModal() {
     a.click();
   });
 
-  // Import JSON
   const fileInput = document.getElementById('import-file-input');
   document.getElementById('btn-trigger-import').addEventListener('click', () => {
     fileInput.click();
@@ -769,7 +768,6 @@ function setupBackupModal() {
     reader.readAsText(file);
   });
 
-  // Reset Data
   document.getElementById('btn-reset-data').addEventListener('click', () => {
     if (confirm('정말로 모든 여행 기록을 초기화하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
       AppState.data = { visited: {} };
@@ -780,7 +778,6 @@ function setupBackupModal() {
   });
 }
 
-// --- Utility Functions ---
 function debounce(func, wait) {
   let timeout;
   return function(...args) {

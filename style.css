@@ -504,6 +504,22 @@ header {
   text-align: right;
 }
 
+.drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.25);
+  backdrop-filter: blur(2px);
+  z-index: 35;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition-normal);
+}
+
+.drawer-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 /* ---------------- Detail Drawer / Panel ---------------- */
 .drawer {
   width: 380px;
