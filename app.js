@@ -619,6 +619,38 @@ function setupEventListeners() {
     }
   }, 400));
 
+  // 맨 하단 안심 💾 [여행 기록 저장 완료] 버튼
+  const saveBtn = document.getElementById('btn-save-confirm');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', () => {
+      const code = AppState.currentRegionCode;
+      if (!code) return;
+      const place = KOREA_REGIONS_10SPOTS[code];
+      const regionName = place ? place.fullName : '해당 지역';
+
+      if (!AppState.data.visited[code]) {
+        AppState.data.visited[code] = { level: 2, spots: [], visitDate: '', memo: '' };
+      }
+      AppState.data.visited[code].visitDate = document.getElementById('visit-date-input').value;
+      AppState.data.visited[code].memo = document.getElementById('visit-memo-input').value;
+
+      saveStoredData();
+
+      // 버튼 피드백 애니메이션
+      saveBtn.classList.add('saved-success');
+      const originalHtml = saveBtn.innerHTML;
+      saveBtn.innerHTML = '<span class="save-icon">✓</span><span class="save-text">저장 완료!</span>';
+
+      setTimeout(() => {
+        saveBtn.classList.remove('saved-success');
+        saveBtn.innerHTML = originalHtml;
+      }, 1500);
+
+      // 안심 토스트 알림
+      showToast(`✅ [${regionName}] 여행 기록이 안전하게 저장되었습니다! 💾`);
+    });
+  }
+
   // Random Explorer
   document.getElementById('btn-random-pick').addEventListener('click', pickRandomTravelDestination);
 
@@ -834,7 +866,7 @@ function exportMapAsImage() {
     ctx.fillStyle = '#0f172a';
     ctx.font = 'bold 44px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('대한민국 방방곡곡 여행 지도', 600, 90);
+    ctx.fillText('나의 대한민국 여행 Trail Log', 600, 90);
 
     ctx.fillStyle = '#64748b';
     ctx.font = '500 22px sans-serif';
@@ -885,7 +917,7 @@ function exportMapAsImage() {
 
     // Download
     const a = document.createElement('a');
-    a.download = `대한민국_여행지도_${new Date().toISOString().slice(0,10)}.png`;
+    a.download = `나의_대한민국_여행_Trail_Log_${new Date().toISOString().slice(0,10)}.png`;
     a.href = canvas.toDataURL('image/png');
     document.body.appendChild(a);
     a.click();
