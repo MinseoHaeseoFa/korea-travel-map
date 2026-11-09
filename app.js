@@ -1012,7 +1012,26 @@ async function syncPullFromSheet(showFeedback = true) {
       }
       if (!AppState.data.visited) AppState.data.visited = {};
       Object.keys(incoming).forEach(code => {
-        AppState.data.visited[code] = incoming[code];
+        const item = incoming[code];
+        if (!AppState.data.visited[code]) {
+          AppState.data.visited[code] = { level: 0, visitDate: '', checkedSpots: [], customSpots: [], memo: '' };
+        }
+        const rec = AppState.data.visited[code];
+        rec.level = Number(item.level) || 0;
+        rec.visitDate = item.visitDate || item.visitedDate || '';
+        rec.checkedSpots = Array.isArray(item.checkedSpots) ? item.checkedSpots : [];
+        rec.customSpots = Array.isArray(item.customSpots) ? item.customSpots : [];
+        
+        // 10대 기본 명소에 없는 체크 항목은 자동으로 customSpots에 복원하여 나만의 랜드마크 누락 방지
+        const placeInfo = PLACES_167_DATA[code];
+        if (placeInfo && placeInfo.spots) {
+          rec.checkedSpots.forEach(s => {
+            if (!placeInfo.spots.includes(s) && !rec.customSpots.includes(s)) {
+              rec.customSpots.push(s);
+            }
+          });
+        }
+        rec.memo = item.memo || '';
       });
       saveStoredData();
       if (statusEl && showFeedback) {
