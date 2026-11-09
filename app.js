@@ -55,6 +55,10 @@ document.addEventListener('DOMContentLoaded', () => {
   initMap();
   setupEventListeners();
   updateStats();
+  // 자동 시트 연동: 로컬 기록이 비어있으면 시트에서 자동 로드
+  if (AppState.data && AppState.data.visited && Object.keys(AppState.data.visited).length === 0) {
+    syncPullFromSheet(false);
+  }
 });
 
 // --- LocalStorage Operations ---
@@ -962,6 +966,107 @@ function setupBackupModal() {
       closeRegionDrawer();
     }
   });
+
+  // 구글 시트 동기화 버튼 연동
+  const btnHeaderSync = document.getElementById('btn-header-sync');
+  if (btnHeaderSync) {
+    btnHeaderSync.addEventListener('click', () => {
+      modal.classList.add('open');
+    });
+  }
+
+  const btnSyncPull = document.getElementById('btn-sync-pull');
+  if (btnSyncPull) {
+    btnSyncPull.addEventListener('click', () => syncPullFromSheet(true));
+  }
+
+  const btnSyncPush = document.getElementById('btn-sync-push');
+  if (btnSyncPush) {
+    btnSyncPush.addEventListener('click', () => syncPushToSheet());
+  }
+}
+
+// --- Google Sheet Real-time Sync ---
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzqiTEoPG98sJbNy8mP2hRlojmmgb_lGp7mb43KtBIepgVGO1QWee2i9FJ14n2yQYVz/exec';
+
+async function syncPullFromSheet(showFeedback = true) {
+  const statusEl = document.getElementById('sync-status');
+  if (statusEl && showFeedback) {
+    statusEl.style.display = 'block';
+    statusEl.style.color = '#2563eb';
+    statusEl.textContent = '⏳ 구글 시트에서 최신 여행 기록을 불러오는 중...';
+  }
+  try {
+    const res = await fetch(`${GOOGLE_SCRIPT_URL}?action=korea`);
+    const json = await res.json();
+    if (json && json.korea) {
+      const incoming = json.korea;
+      const count = Object.keys(incoming).length;
+      if (count === 0) {
+        if (statusEl && showFeedback) {
+          statusEl.style.display = 'block';
+          statusEl.style.color = '#64748b';
+          statusEl.textContent = 'ℹ️ 구글 시트에 아직 저장된 방문 기록이 없습니다.';
+        }
+        return;
+      }
+      if (!AppState.data.visited) AppState.data.visited = {};
+      Object.keys(incoming).forEach(code => {
+        AppState.data.visited[code] = incoming[code];
+      });
+      saveStoredData();
+      if (statusEl && showFeedback) {
+        statusEl.style.display = 'block';
+        statusEl.style.color = '#059669';
+        statusEl.textContent = `✅ 구글 시트에서 ${count}개 지역 기록을 성공적으로 불러왔습니다!`;
+      }
+    }
+  } catch (err) {
+    console.error('Sync pull failed:', err);
+    if (statusEl && showFeedback) {
+      statusEl.style.display = 'block';
+      statusEl.style.color = '#dc2626';
+      statusEl.textContent = '❌ 동기화 실패: 네트워크 상태를 확인해 주세요.';
+    }
+  }
+}
+
+async function syncPushToSheet() {
+  const statusEl = document.getElementById('sync-status');
+  if (statusEl) {
+    statusEl.style.display = 'block';
+    statusEl.style.color = '#2563eb';
+    statusEl.textContent = '⏳ 구글 시트로 현재 지도 기록을 저장하는 중...';
+  }
+  try {
+    const visited = AppState.data.visited || {};
+    const count = Object.keys(visited).length;
+    const payload = {
+      type: 'korea',
+      data: visited
+    };
+    const res = await fetch(GOOGLE_SCRIPT_URL, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    const json = await res.json();
+    if (json && json.status === 'ok') {
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.style.color = '#059669';
+        statusEl.textContent = `✅ 구글 시트에 ${count}개 기록을 저장했습니다! (PC·모바일 동기화 완료)`;
+      }
+    } else {
+      throw new Error((json && json.message) || '저장 실패');
+    }
+  } catch (err) {
+    console.error('Sync push failed:', err);
+    if (statusEl) {
+      statusEl.style.display = 'block';
+      statusEl.style.color = '#dc2626';
+      statusEl.textContent = '❌ 저장 실패: 잠시 후 다시 시도해 주세요.';
+    }
+  }
 }
 
 function debounce(func, wait) {
