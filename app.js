@@ -249,11 +249,16 @@ function handleMouseMove(event) {
   if (window.innerWidth <= 768) return;
   const container = document.getElementById('map-container');
   const rect = container.getBoundingClientRect();
-  const x = event.clientX - rect.left;
-  const y = event.clientY - rect.top;
+  const x = event.clientX - rect.left + 15;
+  const y = event.clientY - rect.top + 15;
 
-  tooltip.style.left = `${x}px`;
-  tooltip.style.top = `${y - 14}px`;
+  const ttWidth = tooltip.offsetWidth || 260;
+  const ttHeight = tooltip.offsetHeight || 200;
+  const maxW = Math.max(12, rect.width - ttWidth - 16);
+  const maxH = Math.max(12, rect.height - ttHeight - 16);
+
+  tooltip.style.left = `${Math.max(12, Math.min(x, maxW))}px`;
+  tooltip.style.top = `${Math.max(12, Math.min(y, maxH))}px`;
 }
 
 function handleMouseLeave() {

@@ -568,18 +568,19 @@ header {
 .tooltip {
   position: absolute;
   pointer-events: none;
-  background: rgba(15, 23, 42, 0.93);
-  color: #fff;
-  padding: 12px 15px;
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(12px);
+  border: 1px solid #bfdbfe;
+  color: #0f172a;
+  padding: 14px 16px;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.12);
   font-size: 12px;
+  width: 255px;
   max-width: 270px;
-  z-index: 50;
+  z-index: 200;
   opacity: 0;
-  transform: translate(-50%, -100%);
-  transition: opacity 0.15s ease, transform 0.15s ease;
-  backdrop-filter: blur(6px);
+  transition: opacity 0.15s ease;
 }
 
 .tooltip.visible {
@@ -592,14 +593,14 @@ header {
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 6px;
-  padding-bottom: 5px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  padding-bottom: 6px;
+  border-bottom: 1px solid #e2e8f0;
 }
 
 .tooltip-title {
   font-size: 14px;
-  font-weight: 800;
-  color: #fff;
+  font-weight: 700;
+  color: #0f172a;
 }
 
 .tooltip-badge {
@@ -609,33 +610,34 @@ header {
   border-radius: var(--radius-full);
 }
 
-.tooltip-badge.lvl-0 { background: #475569; color: #cbd5e1; }
+.tooltip-badge.lvl-0 { background: #f1f5f9; color: #475569; }
 .tooltip-badge.lvl-1 { background: #059669; color: #fff; }
 .tooltip-badge.lvl-2 { background: #10b981; color: #fff; }
 .tooltip-badge.lvl-3 { background: #2563eb; color: #fff; }
 .tooltip-badge.lvl-4 { background: #7c3aed; color: #fff; }
 
 .tooltip-spots-title {
-  font-size: 11px;
-  color: #94a3b8;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #0284c7;
   margin-bottom: 4px;
 }
 
 .tooltip-spot-list {
   list-style: none;
   line-height: 1.45;
-  color: #f1f5f9;
+  color: #334155;
 }
 
 .tooltip-spot-list li::before {
   content: "• ";
-  color: var(--accent);
+  color: #0284c7;
 }
 
 .tooltip-hint {
   margin-top: 8px;
   font-size: 11px;
-  color: #38bdf8;
+  color: #ea580c;
   text-align: right;
   font-weight: 600;
 }
