@@ -55,10 +55,8 @@ document.addEventListener('DOMContentLoaded', () => {
   initMap();
   setupEventListeners();
   updateStats();
-  // 자동 시트 연동: 로컬 기록이 비어있으면 시트에서 자동 로드
-  if (AppState.data && AppState.data.visited && Object.keys(AppState.data.visited).length === 0) {
-    syncPullFromSheet(false);
-  }
+  // 자동 시트 연동: 앱 시작 시 항상 구글 시트 최신 기록과 동기화 (PC↔모바일 불일치 방지)
+  syncPullFromSheet(false);
 });
 
 // --- LocalStorage Operations ---
