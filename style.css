@@ -1246,17 +1246,51 @@ header {
     flex-wrap: wrap;
     gap: 8px;
   }
+
+  .brand {
+    order: 1;
+    width: 100%;
+    gap: 8px;
+  }
+
+  .brand-text {
+    min-width: 0;
+  }
   
   .brand-text h1 {
     font-size: 15px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   
   .brand-text p {
     display: none;
   }
+
+  .hub-link-btn {
+    margin-left: auto;
+    padding: 4px 10px;
+    font-size: 11.5px;
+  }
+
+  .header-actions {
+    order: 2;
+    width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 2px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .header-actions > * {
+    flex-shrink: 0;
+  }
   
   .stats-container {
-    padding: 4px 10px;
+    order: 3;
+    width: 100%;
+    justify-content: space-between;
+    padding: 6px 10px;
     gap: 8px;
   }
   
