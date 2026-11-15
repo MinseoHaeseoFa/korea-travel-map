@@ -1037,7 +1037,7 @@ async function syncPullFromSheet(showFeedback = true) {
     statusEl.textContent = '⏳ 구글 시트에서 최신 여행 기록을 불러오는 중...';
   }
   try {
-    const res = await fetch(`${GOOGLE_SCRIPT_URL}?action=korea`);
+    const res = await fetch(`${GOOGLE_SCRIPT_URL}?action=korea&_t=${Date.now()}`, { cache: 'no-store' });
     const json = await res.json();
     if (json && json.korea) {
       const incoming = json.korea;
@@ -1050,7 +1050,8 @@ async function syncPullFromSheet(showFeedback = true) {
         }
         return;
       }
-      if (!AppState.data.visited) AppState.data.visited = {};
+      // 구글 시트를 단일 기준(SSOT)으로 삼아 기존 로컬 캐시 잔여 기록(취소·삭제된 항목) 완전 교체
+      AppState.data.visited = {};
       Object.keys(incoming).forEach(code => {
         const item = incoming[code];
         if (!AppState.data.visited[code]) {
