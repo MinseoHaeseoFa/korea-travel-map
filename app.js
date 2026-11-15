@@ -243,22 +243,23 @@ function handleMouseEnter(event, d) {
   });
 
   tooltip.classList.add('visible');
+  handleMouseMove(event);
 }
 
 function handleMouseMove(event) {
   if (window.innerWidth <= 768) return;
   const container = document.getElementById('map-container');
   const rect = container.getBoundingClientRect();
-  const x = event.clientX - rect.left + 15;
-  const y = event.clientY - rect.top + 15;
+  const x = event.clientX - rect.left + 16;
+  const y = event.clientY - rect.top + 22;
 
   const ttWidth = tooltip.offsetWidth || 260;
   const ttHeight = tooltip.offsetHeight || 200;
-  const maxW = Math.max(12, rect.width - ttWidth - 16);
-  const maxH = Math.max(12, rect.height - ttHeight - 16);
+  const maxW = Math.max(16, rect.width - ttWidth - 16);
+  const maxH = Math.max(20, rect.height - ttHeight - 16);
 
-  tooltip.style.left = `${Math.max(12, Math.min(x, maxW))}px`;
-  tooltip.style.top = `${Math.max(12, Math.min(y, maxH))}px`;
+  tooltip.style.left = `${Math.max(16, Math.min(x, maxW))}px`;
+  tooltip.style.top = `${Math.max(20, Math.min(y, maxH))}px`;
 }
 
 function handleMouseLeave() {
