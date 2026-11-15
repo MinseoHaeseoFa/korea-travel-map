@@ -250,16 +250,20 @@ function handleMouseMove(event) {
   if (window.innerWidth <= 768) return;
   const container = document.getElementById('map-container');
   const rect = container.getBoundingClientRect();
-  const x = event.clientX - rect.left + 16;
-  const y = event.clientY - rect.top + 22;
 
   const ttWidth = tooltip.offsetWidth || 260;
   const ttHeight = tooltip.offsetHeight || 200;
-  const maxW = Math.max(16, rect.width - ttWidth - 16);
-  const maxH = Math.max(20, rect.height - ttHeight - 16);
 
-  tooltip.style.left = `${Math.max(16, Math.min(x, maxW))}px`;
-  tooltip.style.top = `${Math.max(20, Math.min(y, maxH))}px`;
+  const minLeft = Math.max(16, rect.left + 16);
+  const maxLeft = Math.max(minLeft, rect.right - ttWidth - 16);
+  const minTop = Math.max(16, rect.top + 24);
+  const maxTop = Math.max(minTop, rect.bottom - ttHeight - 16);
+
+  const targetX = event.clientX + 16;
+  const targetY = event.clientY + 24;
+
+  tooltip.style.left = `${Math.max(minLeft, Math.min(targetX, maxLeft))}px`;
+  tooltip.style.top = `${Math.max(minTop, Math.min(targetY, maxTop))}px`;
 }
 
 function handleMouseLeave() {
