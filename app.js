@@ -1205,7 +1205,7 @@ const PHOTO_DRIVE_AUTH_HINT = ' — Apps Script에서 authorizeDrive를 1회 실
 
 // 서버(Apps Script)가 돌려준 실제 오류 사유를 그대로 화면에 보여 주기 위한 정리 함수
 function photoServerErrorMessage(message) {
-  const msg = String(message || '').replace(/^Error:\s*/, '').trim();
+  const msg = String(message || '').replace(/^(Error|Exception):\s*/i, '').trim();
   if (!msg) return PHOTO_REDEPLOY_MSG;
   if (/drive|permission|scope|권한|승인|authoriz/i.test(msg)) {
     return msg + PHOTO_DRIVE_AUTH_HINT;
