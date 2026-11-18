@@ -1201,6 +1201,18 @@ const PHOTO_MAX_WIDTH = 600;
 const PHOTO_TARGET_BYTES = 50 * 1024;
 const PHOTO_REDEPLOY_MSG = '구글 시트 Apps Script를 v3 새 버전으로 재배포하면 사진이 저장됩니다';
 
+const PHOTO_DRIVE_AUTH_HINT = ' — Apps Script에서 authorizeDrive를 1회 실행해 드라이브 권한을 승인해 주세요.';
+
+// 서버(Apps Script)가 돌려준 실제 오류 사유를 그대로 화면에 보여 주기 위한 정리 함수
+function photoServerErrorMessage(message) {
+  const msg = String(message || '').replace(/^Error:\s*/, '').trim();
+  if (!msg) return PHOTO_REDEPLOY_MSG;
+  if (/drive|permission|scope|권한|승인|authoriz/i.test(msg)) {
+    return msg + PHOTO_DRIVE_AUTH_HINT;
+  }
+  return msg;
+}
+
 let photoBusy = false;
 let photoStatusTimer = null;
 let webpSupport = null;
@@ -1392,7 +1404,12 @@ async function handlePhotoFileSelected(file) {
       json = null;
     }
 
-    if (!json || json.status !== 'ok' || !json.imageUrl) {
+    // 서버가 실제 오류 사유를 돌려주면 그 메시지를 그대로 보여 준다
+    if (json && json.status === 'error' && json.message) {
+      throw new Error(photoServerErrorMessage(json.message));
+    }
+    // 응답이 JSON이 아니거나(HTML 오류 페이지 등) v3 배포가 아니면 재배포 안내
+    if (!json || json.version !== 'v3' || json.status !== 'ok' || !json.imageUrl) {
       throw new Error(PHOTO_REDEPLOY_MSG);
     }
 
@@ -1420,13 +1437,25 @@ async function handlePhotoDelete() {
   setPhotoButtonsDisabled(true);
   setPhotoStatus('⏳ 대표 사진을 삭제하는 중...', '');
 
+  let serverError = '';
   try {
-    await fetch(GOOGLE_SCRIPT_URL, {
+    const res = await fetch(GOOGLE_SCRIPT_URL, {
       method: 'POST',
       body: JSON.stringify({ action: 'deletePhoto', scope: PHOTO_SCOPE, key: String(code) })
     });
+    let json = null;
+    try {
+      json = await res.json();
+    } catch (parseErr) {
+      json = null;
+    }
+    if (json && json.status === 'error' && json.message) {
+      serverError = photoServerErrorMessage(json.message);
+    } else if (!json || json.version !== 'v3') {
+      serverError = PHOTO_REDEPLOY_MSG;
+    }
   } catch (err) {
-    console.warn('Photo delete request failed:', err);
+    serverError = (err && err.message) ? err.message : '네트워크 오류로 구글 시트에 반영하지 못했습니다.';
   }
 
   if (AppState.data.visited[code]) {
@@ -1434,7 +1463,11 @@ async function handlePhotoDelete() {
   }
   saveStoredData();
   renderPhotoCard('');
-  setPhotoStatus('🗑️ 대표 사진을 삭제했습니다. (드라이브 원본은 Trail Log Photos 폴더에 보관)', 'ok');
+  if (serverError) {
+    setPhotoStatus('⚠️ 화면에서는 삭제했지만 구글 시트에는 반영되지 않았습니다: ' + serverError, 'error');
+  } else {
+    setPhotoStatus('🗑️ 대표 사진을 삭제했습니다. (드라이브 원본은 Trail Log Photos 폴더에 보관)', 'ok');
+  }
 
   photoBusy = false;
   setPhotoButtonsDisabled(false);
