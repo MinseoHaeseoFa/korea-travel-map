@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>나의 대한민국 여행 Trail Log (Korea Travel Trail Log)</title>
   <meta name="description" content="전국 167개 시·군 나의 여행 발자국을 색칠하고, 10대 대표 명소와 여행 메모를 기록하는 인터랙티브 여행 지도 웹앱">
-  <link rel="stylesheet" href="style.css?v=20261115b">
+  <link rel="stylesheet" href="style.css?v=20261118a">
 </head>
 <body>
 
@@ -126,6 +126,9 @@
           <span class="tooltip-title" id="tt-title">지역명</span>
           <span class="tooltip-badge" id="tt-badge">미방문</span>
         </div>
+        <div class="tooltip-photo-wrap" id="tt-photo-wrap" style="display:none;">
+          <img id="tt-photo" class="tooltip-photo" alt="대표 사진" loading="lazy" decoding="async">
+        </div>
         <div class="tooltip-spots-title">🌟 전문 여행가 추천 대표 명소:</div>
         <ul class="tooltip-spot-list" id="tt-spots"></ul>
         <div class="tooltip-hint">클릭하여 방문 등급 및 10대 명소 정리 👆</div>
@@ -149,6 +152,23 @@
       </div>
 
       <div class="drawer-body">
+        <!-- 0. 대표 이미지 (Trail Log Photos) -->
+        <div class="photo-card" id="photo-card">
+          <div class="photo-frame" id="photo-frame">
+            <img id="photo-img" class="photo-img" alt="대표 사진" loading="lazy" decoding="async">
+            <div class="photo-empty" id="photo-empty">
+              <span class="photo-empty-icon">📷</span>
+              <span class="photo-empty-text">다녀온 기억을 사진 한 장으로 남겨 보세요</span>
+            </div>
+          </div>
+          <div class="photo-actions">
+            <button type="button" class="photo-btn primary" id="btn-photo-upload">📷 대표 사진 등록</button>
+            <button type="button" class="photo-btn danger hidden" id="btn-photo-delete">🗑️ 삭제</button>
+          </div>
+          <div class="photo-status" id="photo-status"></div>
+          <input type="file" id="photo-file-input" accept="image/*" style="display:none">
+        </div>
+
         <!-- 1. Visit Level Selector (5-Tier) -->
         <div class="visit-level-panel">
           <div class="level-panel-title">
@@ -288,6 +308,6 @@
   <script src="places-data-167.js"></script>
 
   <!-- Core App Logic -->
-  <script src="app.js?v=20261115c"></script>
+  <script src="app.js?v=20261118a"></script>
 </body>
 </html>

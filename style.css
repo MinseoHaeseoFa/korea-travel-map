@@ -1377,3 +1377,156 @@ header {
     font-size: 10px;
   }
 }
+
+/* ==========================================================================
+   대표 이미지 (Trail Log Photos) — 상세 서랍 카드 & 호버 팝업
+   ========================================================================== */
+.photo-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.photo-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border-radius: var(--radius-md, 10px);
+  overflow: hidden;
+  background: #eef2f7;
+  border: 1px dashed #cbd5e1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.photo-frame.has-photo {
+  border-style: solid;
+  border-color: #dbe3ec;
+  background: #0f172a;
+}
+
+.photo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: none;
+}
+
+.photo-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: #94a3b8;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: center;
+  padding: 0 12px;
+  line-height: 1.4;
+}
+
+.photo-empty-icon {
+  font-size: 24px;
+}
+
+.photo-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.photo-btn {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.photo-btn.primary {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+.photo-btn.primary:hover {
+  background: #dbeafe;
+}
+
+.photo-btn.danger {
+  flex: 0 0 auto;
+  padding: 10px 14px;
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #dc2626;
+}
+
+.photo-btn.danger:hover {
+  background: #fee2e2;
+}
+
+.photo-btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.photo-btn.hidden {
+  display: none;
+}
+
+.photo-status {
+  display: none;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.photo-status.show {
+  display: block;
+}
+
+.photo-status.ok {
+  color: #059669;
+}
+
+.photo-status.error {
+  color: #dc2626;
+}
+
+/* 호버 팝업 안의 대표 사진 */
+.tooltip-photo-wrap {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #e2e8f0;
+  margin-bottom: 8px;
+}
+
+.tooltip-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* 대표 사진이 있는 여행지: 지역명 / 등급 + 사진만 깔끔하게 */
+.tooltip.has-photo .tooltip-spots-title,
+.tooltip.has-photo .tooltip-spot-list,
+.tooltip.has-photo .tooltip-hint {
+  display: none;
+}
+
+.tooltip.has-photo .tooltip-header {
+  border-bottom: none;
+  margin-bottom: 8px;
+  padding-bottom: 0;
+}

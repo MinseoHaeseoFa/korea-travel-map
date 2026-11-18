@@ -242,8 +242,36 @@ function handleMouseEnter(event, d) {
     spotList.appendChild(li);
   });
 
+  // 대표 이미지가 등록된 여행지는 "지역명 / 등급 + 사진"만 깔끔하게 표시
+  updateTooltipPhoto(record && record.imageUrl);
+
   tooltip.classList.add('visible');
   handleMouseMove(event);
+}
+
+// 호버 팝업 대표 이미지: 해당 여행지에 마우스를 올린 순간에만 1장 로드 (온디맨드 지연 로딩)
+function updateTooltipPhoto(imageUrl) {
+  const wrap = document.getElementById('tt-photo-wrap');
+  const img = document.getElementById('tt-photo');
+  if (!wrap || !img) return;
+
+  const url = (typeof imageUrl === 'string') ? imageUrl.trim() : '';
+  if (url) {
+    if (img.getAttribute('data-src') !== url) {
+      img.setAttribute('data-src', url);
+      img.src = url;
+    }
+    img.onerror = () => {
+      wrap.style.display = 'none';
+      tooltip.classList.remove('has-photo');
+    };
+    wrap.style.display = 'block';
+    tooltip.classList.add('has-photo');
+  } else {
+    wrap.style.display = 'none';
+    tooltip.classList.remove('has-photo');
+    img.removeAttribute('data-src');
+  }
 }
 
 function handleMouseMove(event) {
@@ -320,6 +348,8 @@ function openRegionDrawer(code) {
 
   document.getElementById('visit-date-input').value = record.visitDate || '';
   document.getElementById('visit-memo-input').value = record.memo || '';
+
+  renderPhotoCard(record.imageUrl || '');
 
   document.getElementById('region-drawer').classList.add('open');
   document.getElementById('drawer-backdrop').classList.add('open');
@@ -703,6 +733,9 @@ function setupEventListeners() {
   // Backup & Restore
   setupBackupModal();
 
+  // 대표 이미지 (Trail Log Photos)
+  setupPhotoCard();
+
   // Keyboard shortcut: ESC closes drawer
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeRegionDrawer();
@@ -1062,6 +1095,7 @@ async function syncPullFromSheet(showFeedback = true) {
         rec.visitDate = item.visitDate || item.visitedDate || '';
         rec.checkedSpots = Array.isArray(item.checkedSpots) ? item.checkedSpots : [];
         rec.customSpots = Array.isArray(item.customSpots) ? item.customSpots : [];
+        rec.imageUrl = item.imageUrl || '';
         
         // 10대 기본 명소에 없는 체크 항목은 자동으로 customSpots에 복원하여 나만의 랜드마크 누락 방지
         const placeInfo = PLACES_167_DATA[code];
@@ -1101,9 +1135,25 @@ async function syncPushToSheet() {
   try {
     const visited = AppState.data.visited || {};
     const count = Object.keys(visited).length;
+    const dataToSend = {};
+    Object.keys(visited).forEach(code => {
+      const rec = visited[code] || {};
+      const item = {
+        level: rec.level || 0,
+        visitDate: rec.visitDate || '',
+        checkedSpots: rec.checkedSpots || [],
+        customSpots: rec.customSpots || [],
+        memo: rec.memo || ''
+      };
+      // imageUrl 값을 알고 있는 경우에만 전송 (모르는 상태에서 사진을 지우지 않도록)
+      if (Object.prototype.hasOwnProperty.call(rec, 'imageUrl')) {
+        item.imageUrl = rec.imageUrl || '';
+      }
+      dataToSend[code] = item;
+    });
     const payload = {
       type: 'korea',
-      data: visited
+      data: dataToSend
     };
     const res = await fetch(GOOGLE_SCRIPT_URL, {
       method: 'POST',
@@ -1135,4 +1185,266 @@ function debounce(func, wait) {
     clearTimeout(timeout);
     timeout = setTimeout(() => func.apply(this, args), wait);
   };
+}
+
+/* ==========================================================================
+   대표 이미지 (Trail Log Photos)
+   브라우저에서 600px·30~50KB로 자동 압축 → Google Drive 저장 → 시트 ImageUrl 동기화
+   ========================================================================== */
+const PHOTO_SCOPE = 'korea';
+const PHOTO_FOLDER_NAME = 'Trail Log Photos';
+const PHOTO_EMPTY_TEXT = '다녀온 기억을 사진 한 장으로 남겨 보세요';
+const PHOTO_MAX_WIDTH = 600;
+const PHOTO_TARGET_BYTES = 50 * 1024;
+const PHOTO_REDEPLOY_MSG = '구글 시트 Apps Script를 v3 새 버전으로 재배포하면 사진이 저장됩니다';
+
+let photoBusy = false;
+let photoStatusTimer = null;
+let webpSupport = null;
+
+function supportsWebp() {
+  if (webpSupport !== null) return webpSupport;
+  try {
+    const c = document.createElement('canvas');
+    c.width = 1;
+    c.height = 1;
+    webpSupport = c.toDataURL('image/webp').indexOf('data:image/webp') === 0;
+  } catch (e) {
+    webpSupport = false;
+  }
+  return webpSupport;
+}
+
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.onerror = () => reject(new Error('파일을 읽지 못했습니다.'));
+    fr.readAsDataURL(file);
+  });
+}
+
+function loadImageElement(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('이미지를 열지 못했습니다. 다른 사진으로 시도해 주세요.'));
+    img.src = src;
+  });
+}
+
+function estimateDataUrlBytes(dataUrl) {
+  const comma = dataUrl.indexOf(',');
+  const b64 = comma > -1 ? dataUrl.substring(comma + 1) : dataUrl;
+  const padding = b64.endsWith('==') ? 2 : (b64.endsWith('=') ? 1 : 0);
+  return Math.floor((b64.length * 3) / 4) - padding;
+}
+
+// 가로 600px · 30~50KB 목표로 자동 압축 (WebP 지원 시 WebP, 아니면 JPEG)
+async function compressTrailPhoto(file) {
+  if (!file || !file.type || file.type.indexOf('image/') !== 0) {
+    throw new Error('사진 파일(이미지)만 등록할 수 있습니다.');
+  }
+  const dataUrl = await readFileAsDataURL(file);
+  const img = await loadImageElement(dataUrl);
+  const srcW = img.naturalWidth || img.width;
+  const srcH = img.naturalHeight || img.height;
+  if (!srcW || !srcH) throw new Error('이미지 크기를 읽을 수 없습니다.');
+
+  const mime = supportsWebp() ? 'image/webp' : 'image/jpeg';
+  let width = Math.min(PHOTO_MAX_WIDTH, srcW);
+  let quality = 0.82;
+  let out = '';
+
+  for (let i = 0; i < 8; i++) {
+    const height = Math.max(1, Math.round((srcH * width) / srcW));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(width));
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    out = canvas.toDataURL(mime, quality);
+
+    if (estimateDataUrlBytes(out) <= PHOTO_TARGET_BYTES) break;
+    if (quality > 0.6) {
+      quality = Math.max(0.6, quality - 0.06);
+    } else {
+      width = width * 0.85;
+      quality = 0.78;
+    }
+  }
+
+  const bytes = estimateDataUrlBytes(out);
+  const base64 = out.substring(out.indexOf(',') + 1);
+  const ext = mime === 'image/webp' ? 'webp' : 'jpg';
+  return {
+    base64: base64,
+    mimeType: mime,
+    bytes: bytes,
+    fileName: `traillog-korea-${Date.now()}.${ext}`
+  };
+}
+
+function setPhotoStatus(message, kind) {
+  const el = document.getElementById('photo-status');
+  if (!el) return;
+  if (photoStatusTimer) clearTimeout(photoStatusTimer);
+  el.className = 'photo-status' + (message ? ' show' : '');
+  if (kind === 'ok') el.classList.add('ok');
+  if (kind === 'error') el.classList.add('error');
+  el.textContent = message || '';
+  if (message) {
+    photoStatusTimer = setTimeout(() => {
+      el.className = 'photo-status';
+      el.textContent = '';
+    }, 8000);
+  }
+}
+
+function renderPhotoCard(imageUrl) {
+  const frame = document.getElementById('photo-frame');
+  const img = document.getElementById('photo-img');
+  const empty = document.getElementById('photo-empty');
+  const btnUpload = document.getElementById('btn-photo-upload');
+  const btnDelete = document.getElementById('btn-photo-delete');
+  if (!frame || !img) return;
+
+  const url = (typeof imageUrl === 'string') ? imageUrl.trim() : '';
+  const emptyText = empty ? empty.querySelector('.photo-empty-text') : null;
+  if (url) {
+    if (emptyText) emptyText.textContent = PHOTO_EMPTY_TEXT;
+    img.onerror = () => {
+      img.removeAttribute('src');
+      img.style.display = 'none';
+      empty.style.display = 'flex';
+      frame.classList.remove('has-photo');
+      if (emptyText) emptyText.textContent = '사진을 불러오지 못했습니다. [🔄 사진 변경]으로 다시 등록해 주세요.';
+    };
+    img.src = url;
+    img.style.display = 'block';
+    empty.style.display = 'none';
+    frame.classList.add('has-photo');
+    btnUpload.textContent = '🔄 사진 변경';
+    btnDelete.classList.remove('hidden');
+  } else {
+    img.onerror = null;
+    img.removeAttribute('src');
+    img.style.display = 'none';
+    empty.style.display = 'flex';
+    frame.classList.remove('has-photo');
+    btnUpload.textContent = '📷 대표 사진 등록';
+    btnDelete.classList.add('hidden');
+  }
+}
+
+function setPhotoButtonsDisabled(disabled) {
+  const btnUpload = document.getElementById('btn-photo-upload');
+  const btnDelete = document.getElementById('btn-photo-delete');
+  if (btnUpload) btnUpload.disabled = disabled;
+  if (btnDelete) btnDelete.disabled = disabled;
+}
+
+async function handlePhotoFileSelected(file) {
+  const code = AppState.currentRegionCode;
+  if (!code || photoBusy) return;
+
+  photoBusy = true;
+  setPhotoButtonsDisabled(true);
+  setPhotoStatus('⏳ 사진을 가로 600px로 압축해 구글 드라이브에 저장하는 중...', '');
+
+  try {
+    const compressed = await compressTrailPhoto(file);
+    const payload = {
+      action: 'uploadPhoto',
+      folderName: PHOTO_FOLDER_NAME,
+      fileName: compressed.fileName,
+      mimeType: compressed.mimeType,
+      base64Data: compressed.base64,
+      scope: PHOTO_SCOPE,
+      key: String(code)
+    };
+
+    const res = await fetch(GOOGLE_SCRIPT_URL, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+
+    let json = null;
+    try {
+      json = await res.json();
+    } catch (parseErr) {
+      json = null;
+    }
+
+    if (!json || json.status !== 'ok' || !json.imageUrl) {
+      throw new Error(PHOTO_REDEPLOY_MSG);
+    }
+
+    if (!AppState.data.visited[code]) {
+      AppState.data.visited[code] = { level: 0, visitDate: '', checkedSpots: [], customSpots: [], memo: '' };
+    }
+    AppState.data.visited[code].imageUrl = json.imageUrl;
+    saveStoredData();
+    renderPhotoCard(json.imageUrl);
+    setPhotoStatus(`✅ 대표 사진 저장 완료 (${Math.round(compressed.bytes / 1024)}KB · 구글 드라이브 'Trail Log Photos')`, 'ok');
+  } catch (err) {
+    setPhotoStatus('⚠️ ' + (err && err.message ? err.message : '사진 저장에 실패했습니다.'), 'error');
+  } finally {
+    photoBusy = false;
+    setPhotoButtonsDisabled(false);
+  }
+}
+
+async function handlePhotoDelete() {
+  const code = AppState.currentRegionCode;
+  if (!code || photoBusy) return;
+  if (!window.confirm('이 여행지의 대표 사진을 삭제할까요? (드라이브 원본은 보관됩니다)')) return;
+
+  photoBusy = true;
+  setPhotoButtonsDisabled(true);
+  setPhotoStatus('⏳ 대표 사진을 삭제하는 중...', '');
+
+  try {
+    await fetch(GOOGLE_SCRIPT_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'deletePhoto', scope: PHOTO_SCOPE, key: String(code) })
+    });
+  } catch (err) {
+    console.warn('Photo delete request failed:', err);
+  }
+
+  if (AppState.data.visited[code]) {
+    AppState.data.visited[code].imageUrl = '';
+  }
+  saveStoredData();
+  renderPhotoCard('');
+  setPhotoStatus('🗑️ 대표 사진을 삭제했습니다. (드라이브 원본은 Trail Log Photos 폴더에 보관)', 'ok');
+
+  photoBusy = false;
+  setPhotoButtonsDisabled(false);
+}
+
+function setupPhotoCard() {
+  const btnUpload = document.getElementById('btn-photo-upload');
+  const btnDelete = document.getElementById('btn-photo-delete');
+  const fileInput = document.getElementById('photo-file-input');
+  if (!btnUpload || !fileInput) return;
+
+  btnUpload.addEventListener('click', () => {
+    if (!AppState.currentRegionCode || photoBusy) return;
+    fileInput.value = '';
+    fileInput.click();
+  });
+
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) handlePhotoFileSelected(file);
+  });
+
+  if (btnDelete) {
+    btnDelete.addEventListener('click', handlePhotoDelete);
+  }
 }
