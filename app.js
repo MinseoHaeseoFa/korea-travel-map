@@ -1212,7 +1212,7 @@ function photoServerErrorMessage(message) {
   if (/DriveApp\.getFoldersByName|drive\.readonly|auth\/drive|permission to call DriveApp|호출할 수 있는 권한이 없습니다/i.test(msg)) {
     return PHOTO_DRIVE_AUTH_MSG;
   }
-  if (/drive|permission|scope|권한|승인|authoriz/i.test(msg)) {
+  if (/drive|permission|권한|승인|authoriz/i.test(msg)) {
     return msg + PHOTO_DRIVE_AUTH_HINT;
   }
   return msg;
