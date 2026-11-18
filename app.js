@@ -257,16 +257,19 @@ function updateTooltipPhoto(imageUrl) {
 
   const url = (typeof imageUrl === 'string') ? imageUrl.trim() : '';
   if (url) {
+    // 컨테이너를 먼저 보이게 한 뒤에 src를 넣어야 숨김 상태에서 로드가 취소되지 않는다
+    wrap.style.display = 'block';
+    tooltip.classList.add('has-photo');
+    img.onerror = () => {
+      const alt = photoAlternateUrl(url);
+      if (alt && img.getAttribute('src') !== alt) { img.src = alt; return; }
+      wrap.style.display = 'none';
+      tooltip.classList.remove('has-photo');
+    };
     if (img.getAttribute('data-src') !== url) {
       img.setAttribute('data-src', url);
       img.src = url;
     }
-    img.onerror = () => {
-      wrap.style.display = 'none';
-      tooltip.classList.remove('has-photo');
-    };
-    wrap.style.display = 'block';
-    tooltip.classList.add('has-photo');
   } else {
     wrap.style.display = 'none';
     tooltip.classList.remove('has-photo');
@@ -1215,6 +1218,13 @@ function supportsWebp() {
   return webpSupport;
 }
 
+// Drive 썸네일이 일시적으로 실패하면 lh3 직접 주소로 한 번 더 시도
+function photoAlternateUrl(url) {
+  const m = String(url || '').match(/[?&]id=([\w-]+)/);
+  if (!m) return '';
+  return 'https://lh3.googleusercontent.com/d/' + m[1] + '=w800';
+}
+
 function readFileAsDataURL(file) {
   return new Promise((resolve, reject) => {
     const fr = new FileReader();
@@ -1316,7 +1326,15 @@ function renderPhotoCard(imageUrl) {
   const emptyText = empty ? empty.querySelector('.photo-empty-text') : null;
   if (url) {
     if (emptyText) emptyText.textContent = PHOTO_EMPTY_TEXT;
+    // 컨테이너를 먼저 보이게 한 뒤에 src를 넣어야 숨김 상태에서 로드가 취소되지 않는다
+    img.style.display = 'block';
+    empty.style.display = 'none';
+    frame.classList.add('has-photo');
+    btnUpload.textContent = '🔄 사진 변경';
+    btnDelete.classList.remove('hidden');
     img.onerror = () => {
+      const alt = photoAlternateUrl(url);
+      if (alt && img.getAttribute('src') !== alt) { img.src = alt; return; }
       img.removeAttribute('src');
       img.style.display = 'none';
       empty.style.display = 'flex';
@@ -1324,11 +1342,6 @@ function renderPhotoCard(imageUrl) {
       if (emptyText) emptyText.textContent = '사진을 불러오지 못했습니다. [🔄 사진 변경]으로 다시 등록해 주세요.';
     };
     img.src = url;
-    img.style.display = 'block';
-    empty.style.display = 'none';
-    frame.classList.add('has-photo');
-    btnUpload.textContent = '🔄 사진 변경';
-    btnDelete.classList.remove('hidden');
   } else {
     img.onerror = null;
     img.removeAttribute('src');
