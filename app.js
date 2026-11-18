@@ -1202,11 +1202,16 @@ const PHOTO_TARGET_BYTES = 50 * 1024;
 const PHOTO_REDEPLOY_MSG = '구글 시트 Apps Script를 v3 새 버전으로 재배포하면 사진이 저장됩니다';
 
 const PHOTO_DRIVE_AUTH_HINT = ' — Apps Script에서 authorizeDrive를 1회 실행해 드라이브 권한을 승인해 주세요.';
+const PHOTO_DRIVE_AUTH_MSG = '드라이브 권한 승인이 필요합니다. Apps Script 편집기 → 함수 [authorizeDrive] → [▷ 실행] → [권한 검토] → [허용] 후 다시 시도해 주세요.';
 
-// 서버(Apps Script)가 돌려준 실제 오류 사유를 그대로 화면에 보여 주기 위한 정리 함수
+// 서버(Apps Script)가 돌려준 실제 오류 사유를 화면에 보여 주기 위한 정리 함수
+// (드라이브 권한 미승인은 원인과 해결법이 분명하므로 짧은 안내로 바꿔 보여 준다)
 function photoServerErrorMessage(message) {
   const msg = String(message || '').replace(/^(Error|Exception):\s*/i, '').trim();
   if (!msg) return PHOTO_REDEPLOY_MSG;
+  if (/DriveApp\.getFoldersByName|drive\.readonly|auth\/drive|permission to call DriveApp|호출할 수 있는 권한이 없습니다/i.test(msg)) {
+    return PHOTO_DRIVE_AUTH_MSG;
+  }
   if (/drive|permission|scope|권한|승인|authoriz/i.test(msg)) {
     return msg + PHOTO_DRIVE_AUTH_HINT;
   }
