@@ -1154,15 +1154,23 @@ async function syncPushToSheet() {
       }
       dataToSend[code] = item;
     });
-    const payload = {
+    // 🔒 쓰기는 주인장 PIN이 필요합니다. (구경·불러오기는 그대로 자유)
+    const result = await OwnerPin.post(GOOGLE_SCRIPT_URL, (pin) => ({
       type: 'korea',
-      data: dataToSend
-    };
-    const res = await fetch(GOOGLE_SCRIPT_URL, {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    });
-    const json = await res.json();
+      data: dataToSend,
+      pin: pin
+    }));
+    if (result.cancelled) {
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.style.color = '#b45309';
+        statusEl.textContent = result.unauthorized
+          ? '🔒 PIN 인증에 실패해 저장하지 않았습니다.'
+          : '🔒 주인장 PIN 입력이 취소되어 저장하지 않았습니다.';
+      }
+      return;
+    }
+    const json = result.json;
     if (json && json.status === 'ok') {
       if (statusEl) {
         statusEl.style.display = 'block';
@@ -1397,17 +1405,24 @@ async function handlePhotoFileSelected(file) {
       key: String(code)
     };
 
-    const res = await fetch(GOOGLE_SCRIPT_URL, {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    });
-
-    let json = null;
-    try {
-      json = await res.json();
-    } catch (parseErr) {
-      json = null;
+    // 🔒 사진 업로드는 쓰기이므로 주인장 PIN을 함께 보냅니다.
+    const result = await OwnerPin.post(GOOGLE_SCRIPT_URL, (pin) => ({
+      action: 'uploadPhoto',
+      folderName: payload.folderName,
+      fileName: payload.fileName,
+      mimeType: payload.mimeType,
+      base64Data: payload.base64Data,
+      scope: payload.scope,
+      key: payload.key,
+      pin: pin
+    }));
+    if (result.cancelled) {
+      setPhotoStatus(result.unauthorized
+        ? '🔒 PIN 인증에 실패해 사진을 저장하지 않았습니다.'
+        : '🔒 주인장 PIN 입력이 취소되어 사진을 저장하지 않았습니다.', 'error');
+      return;
     }
+    const json = result.json;
 
     // 서버가 실제 오류 사유를 돌려주면 그 메시지를 그대로 보여 준다
     if (json && json.status === 'error' && json.message) {
@@ -1443,24 +1458,31 @@ async function handlePhotoDelete() {
   setPhotoStatus('⏳ 대표 사진을 삭제하는 중...', '');
 
   let serverError = '';
+  let pinCancelled = false;
   try {
-    const res = await fetch(GOOGLE_SCRIPT_URL, {
-      method: 'POST',
-      body: JSON.stringify({ action: 'deletePhoto', scope: PHOTO_SCOPE, key: String(code) })
-    });
-    let json = null;
-    try {
-      json = await res.json();
-    } catch (parseErr) {
-      json = null;
-    }
-    if (json && json.status === 'error' && json.message) {
-      serverError = photoServerErrorMessage(json.message);
-    } else if (!json || json.version !== 'v3') {
-      serverError = PHOTO_REDEPLOY_MSG;
+    // 🔒 사진 삭제(시트 ImageUrl 비우기)는 쓰기이므로 주인장 PIN이 필요합니다.
+    const result = await OwnerPin.post(GOOGLE_SCRIPT_URL, (pin) => ({
+      action: 'deletePhoto', scope: PHOTO_SCOPE, key: String(code), pin: pin
+    }));
+    if (result.cancelled) {
+      pinCancelled = true;
+    } else {
+      const json = result.json;
+      if (json && json.status === 'error' && json.message) {
+        serverError = photoServerErrorMessage(json.message);
+      } else if (!json || json.version !== 'v3') {
+        serverError = PHOTO_REDEPLOY_MSG;
+      }
     }
   } catch (err) {
     serverError = (err && err.message) ? err.message : '네트워크 오류로 구글 시트에 반영하지 못했습니다.';
+  }
+
+  if (pinCancelled) {
+    setPhotoStatus('🔒 주인장 PIN 인증이 취소되어 사진을 삭제하지 않았습니다.', 'error');
+    photoBusy = false;
+    setPhotoButtonsDisabled(false);
+    return;
   }
 
   if (AppState.data.visited[code]) {

@@ -295,6 +295,11 @@
           </button>
         </div>
         <div id="sync-status" style="font-size: 12px; margin-top: 8px; text-align: center; color: #059669; font-weight: 600; display: none;"></div>
+        <!-- 🔒 주인장 PIN 잠금 상태 / 초기화 -->
+        <div class="owner-pin-bar">
+          <span class="owner-pin-state" data-owner-pin-state>🔒 저장된 PIN 없음 — 저장할 때 PIN을 묻습니다.</span>
+          <button type="button" class="owner-pin-reset" id="btn-owner-pin-reset">🔑 PIN 초기화(잠금)</button>
+        </div>
       </div>
     </div>
   </div>
@@ -307,7 +312,10 @@
   <script src="map-data-167.js"></script>
   <script src="places-data-167.js"></script>
 
+  <!-- 🔒 주인장 PIN 잠금 (쓰기 전용 · 읽기는 자유) -->
+  <script src="pin-lock.js?v=20261124a"></script>
+
   <!-- Core App Logic -->
-  <script src="app.js?v=20261118f"></script>
+  <script src="app.js?v=20261124a"></script>
 </body>
 </html>
